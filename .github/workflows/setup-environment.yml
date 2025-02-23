@@ -101,9 +101,18 @@ jobs:
       - name: Create Shared Infrastructure
         if: ${{ github.event.inputs.create_shared_infra == 'true' }}
         run: |
+          # Obter ID da conta AWS
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
+
           echo "Criando infraestrutura compartilhada..."
           cd terraform/shared
-          terraform init
+          
+          # Inicializar com backend configurado dinamicamente
+          terraform init \
+            -backend-config="bucket=${BUCKET_NAME}" \
+            -backend-config="key=shared/terraform.tfstate"
+          
           terraform plan -out=tfplan
           terraform apply tfplan
           
