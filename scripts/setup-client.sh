@@ -9,6 +9,8 @@ if [ -z "$CLIENT" ] || [ -z "$ENVIRONMENT" ]; then
     exit 1
 fi
 
+CLIENT_DIR="terraform/environments/clients/${CLIENT}/${ENVIRONMENT}"
+
 echo "Iniciando setup para ${CLIENT}/${ENVIRONMENT} na região ${AWS_REGION}..."
 
 # Login no ECR
@@ -70,8 +72,8 @@ db_username = "${DB_USER}"
 domain_name = "$(aws ssm get-parameter --name "/mautic/${CLIENT}/${ENVIRONMENT}/config/domain" --query "Parameter.Value" --output text)"
 EOF
 
-# Copiar main.tf template
-cp terraform/templates/client-minimal/* "${CLIENT_DIR}/"
+# Copiar templates
+cp -r terraform/templates/client-minimal/* "${CLIENT_DIR}/"
 
 # Inicializar e aplicar Terraform
 cd "${CLIENT_DIR}"

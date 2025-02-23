@@ -27,6 +27,7 @@ on:
 
 env:
   AWS_REGION: ${{ github.event.inputs.aws_region }}
+  CLIENT_DIR: terraform/environments/clients/${{ github.event.inputs.client }}/${{ github.event.inputs.environment }}
 
 jobs:
   validate:
@@ -63,14 +64,42 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Install MySQL Client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mysql-client
+
       - name: Make scripts executable
         run: |
           chmod +x scripts/*.sh
           ls -la scripts/
 
+      - name: Create Client Directory
+        run: |
+          mkdir -p ${{ env.CLIENT_DIR }}
+          chmod -R 755 terraform/environments/clients
+
       - name: Setup Client
         run: |
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
+
           ./scripts/setup-client.sh \
             ${{ github.event.inputs.client }} \
             ${{ github.event.inputs.environment }} \
-            ${{ env.AWS_REGION }} 
+            ${{ env.AWS_REGION }}
+
+          cd ${{ env.CLIENT_DIR }}
+          
+          # Inicializar Terraform com backend configuration
+          terraform init \
+            -backend-config="bucket=${BUCKET_NAME}" \
+            -backend-config="key=clients/${{ github.event.inputs.client }}/${{ github.event.inputs.environment }}/terraform.tfstate" \
+            -backend-config="region=us-east-1" \
+            -backend-config="dynamodb_table=mautic-terraform-lock"
+
+          terraform plan -out=tfplan
+          terraform apply tfplan 
