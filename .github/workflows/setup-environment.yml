@@ -60,10 +60,19 @@ jobs:
 
       - name: Validate AWS Access
         run: |
-          # Testar acesso ao AWS
-          aws sts get-caller-identity
+          echo "Verificando acesso ao S3..."
+          aws s3api head-bucket --bucket mautic-terraform-state || {
+            echo "Erro: Sem acesso ao bucket do Terraform state"
+            exit 1
+          }
           
-          # Verificar permissões necessárias
+          echo "Verificando acesso ao DynamoDB..."
+          aws dynamodb describe-table --table-name mautic-terraform-lock || {
+            echo "Erro: Sem acesso à tabela de lock do Terraform"
+            exit 1
+          }
+          
+          # Verificar outros serviços
           aws secretsmanager list-secrets
           aws ssm describe-parameters
           aws rds describe-db-instances
@@ -257,30 +266,17 @@ jobs:
               "/mautic/${CLIENT}/${ENVIRONMENT}/database/user" || true
 
       # Cleanup da infra compartilhada APENAS se for o primeiro deploy e falhou
-      - name: Cleanup Shared Infrastructure
-        if: ${{ github.event.inputs.create_shared_infra == 'true' }}
+      - name: Cleanup Resources
         run: |
-          echo "Verificando se existem outros clientes antes de limpar infra compartilhada..."
-          
-          # Listar todos os bancos de dados exceto o do cliente atual
-          OTHER_DBS=$(mysql -h $RDS_ENDPOINT -u $MASTER_USER -p${MASTER_PASSWORD} \
-            -e "SHOW DATABASES LIKE 'mautic_%';" | grep -v "${DB_NAME}" || true)
-          
-          if [ -z "$OTHER_DBS" ]; then
-            echo "Nenhum outro cliente encontrado. Limpando infraestrutura compartilhada..."
+          # Obter ID da conta AWS
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
+
+          if [[ "${{ github.event.inputs.create_shared_infra }}" == "true" ]]; then
+            echo "Limpando infraestrutura compartilhada..."
             cd terraform/shared
             terraform init \
-              -backend-config="bucket=mautic-terraform-state" \
+              -backend-config="bucket=${BUCKET_NAME}" \
               -backend-config="key=shared/terraform.tfstate"
             terraform destroy -auto-approve || true
-            
-            # Limpar secrets compartilhados
-            aws secretsmanager delete-secret \
-              --secret-id "/mautic/shared/rds/master" \
-              --force-delete-without-recovery || true
-              
-            aws ssm delete-parameter \
-              --name "/mautic/shared/rds/endpoint" || true
-          else
-            echo "Existem outros clientes. Mantendo infraestrutura compartilhada."
           fi 

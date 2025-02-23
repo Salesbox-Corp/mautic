@@ -1,22 +1,28 @@
 #!/bin/bash
 
-# Verificar se o bucket já existe
-BUCKET_EXISTS=$(aws s3api head-bucket --bucket mautic-terraform-state 2>&1 || true)
+# Obter ID da conta AWS
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
 
-if [[ -n "$BUCKET_EXISTS" ]]; then
+echo "Usando bucket: $BUCKET_NAME"
+
+# Verificar se o bucket já existe e se temos acesso
+if ! aws s3api head-bucket --bucket $BUCKET_NAME 2>/dev/null; then
     echo "Criando bucket para Terraform state..."
     aws s3api create-bucket \
-        --bucket mautic-terraform-state \
+        --bucket $BUCKET_NAME \
         --region us-east-1
 
+    echo "Configurando bucket..."
+    
     # Habilitar versionamento
     aws s3api put-bucket-versioning \
-        --bucket mautic-terraform-state \
+        --bucket $BUCKET_NAME \
         --versioning-configuration Status=Enabled
 
     # Habilitar criptografia
     aws s3api put-bucket-encryption \
-        --bucket mautic-terraform-state \
+        --bucket $BUCKET_NAME \
         --server-side-encryption-configuration '{
             "Rules": [
                 {
@@ -29,13 +35,20 @@ if [[ -n "$BUCKET_EXISTS" ]]; then
 
     # Bloquear acesso público
     aws s3api put-public-access-block \
-        --bucket mautic-terraform-state \
+        --bucket $BUCKET_NAME \
         --public-access-block-configuration '{
             "BlockPublicAcls": true,
             "IgnorePublicAcls": true,
             "BlockPublicPolicy": true,
             "RestrictPublicBuckets": true
         }'
+else
+    echo "Bucket $BUCKET_NAME já existe, verificando acesso..."
+    # Testar permissões
+    if ! aws s3 ls s3://$BUCKET_NAME >/dev/null 2>&1; then
+        echo "Erro: Não temos permissão para acessar o bucket $BUCKET_NAME"
+        exit 1
+    fi
 fi
 
 # Verificar se a tabela DynamoDB já existe
