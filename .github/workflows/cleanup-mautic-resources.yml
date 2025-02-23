@@ -106,26 +106,85 @@ jobs:
           VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=mautic-shared-vpc" --query 'Vpcs[0].VpcId' --output text)
           
           if [ "$VPC_ID" != "None" ]; then
-            # Deletar subnets
-            for SUBNET in $(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query 'Subnets[*].SubnetId' --output text); do
-              aws ec2 delete-subnet --subnet-id $SUBNET
+            echo "Encontrada VPC: $VPC_ID"
+
+            # 1. Primeiro remover ECS Services e Tasks
+            echo "Removendo ECS resources..."
+            for CLUSTER in $(aws ecs list-clusters --query 'clusterArns[*]' --output text | grep 'mautic-'); do
+              for SERVICE in $(aws ecs list-services --cluster $CLUSTER --query 'serviceArns[*]' --output text); do
+                aws ecs update-service --cluster $CLUSTER --service $SERVICE --desired-count 0
+                aws ecs delete-service --cluster $CLUSTER --service $SERVICE --force
+              done
+              aws ecs delete-cluster --cluster $CLUSTER
+            done
+
+            # 2. Remover Load Balancers
+            echo "Removendo Load Balancers..."
+            for ALB in $(aws elbv2 describe-load-balancers --query 'LoadBalancers[?starts_with(LoadBalancerName, `mautic-`)].LoadBalancerArn' --output text); do
+              aws elbv2 delete-load-balancer --load-balancer-arn $ALB
             done
             
-            # Deletar route tables
-            for RT in $(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" --query 'RouteTables[?RouteTableId!=`null`].RouteTableId' --output text); do
-              if [ "$RT" != "$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" --query 'RouteTables[?Associations[?Main!=`false`]].RouteTableId' --output text)" ]; then
-                aws ec2 delete-route-table --route-table-id $RT
+            # Aguardar ALBs serem deletados
+            echo "Aguardando ALBs serem removidos..."
+            sleep 30
+
+            # 3. Remover Target Groups
+            echo "Removendo Target Groups..."
+            for TG in $(aws elbv2 describe-target-groups --query 'TargetGroups[?starts_with(TargetGroupName, `mautic-`)].TargetGroupArn' --output text); do
+              aws elbv2 delete-target-group --target-group-arn $TG
+            done
+
+            # 4. Remover ENIs
+            echo "Removendo Network Interfaces..."
+            for ENI in $(aws ec2 describe-network-interfaces --filters "Name=vpc-id,Values=$VPC_ID" --query 'NetworkInterfaces[*].NetworkInterfaceId' --output text); do
+              aws ec2 delete-network-interface --network-interface-id $ENI || true
+            done
+
+            # 5. Remover EFS Mount Targets
+            echo "Removendo EFS Mount Targets..."
+            for EFS in $(aws efs describe-file-systems --query 'FileSystems[?contains(Tags[?Key==`Name`].Value, `mautic`)].FileSystemId' --output text); do
+              for MT in $(aws efs describe-mount-targets --file-system-id $EFS --query 'MountTargets[*].MountTargetId' --output text); do
+                aws efs delete-mount-target --mount-target-id $MT
+              done
+              # Aguardar mount targets serem deletados
+              sleep 30
+              aws efs delete-file-system --file-system-id $EFS
+            done
+
+            # 6. Remover Security Groups (exceto o default)
+            echo "Removendo Security Groups..."
+            DEFAULT_SG=$(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$VPC_ID" "Name=group-name,Values=default" --query 'SecurityGroups[0].GroupId' --output text)
+            for SG in $(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$VPC_ID" --query 'SecurityGroups[*].GroupId' --output text); do
+              if [ "$SG" != "$DEFAULT_SG" ]; then
+                aws ec2 delete-security-group --group-id $SG || true
+              fi
+            done
+
+            # 7. Remover subnets
+            echo "Removendo Subnets..."
+            for SUBNET in $(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query 'Subnets[*].SubnetId' --output text); do
+              aws ec2 delete-subnet --subnet-id $SUBNET || true
+            done
+            
+            # 8. Remover route tables (exceto a main)
+            echo "Removendo Route Tables..."
+            MAIN_RT=$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" "Name=association.main,Values=true" --query 'RouteTables[0].RouteTableId' --output text)
+            for RT in $(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" --query 'RouteTables[*].RouteTableId' --output text); do
+              if [ "$RT" != "$MAIN_RT" ]; then
+                aws ec2 delete-route-table --route-table-id $RT || true
               fi
             done
             
-            # Deletar internet gateway
+            # 9. Remover internet gateway
+            echo "Removendo Internet Gateway..."
             IGW_ID=$(aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$VPC_ID" --query 'InternetGateways[0].InternetGatewayId' --output text)
             if [ "$IGW_ID" != "None" ]; then
               aws ec2 detach-internet-gateway --internet-gateway-id $IGW_ID --vpc-id $VPC_ID
               aws ec2 delete-internet-gateway --internet-gateway-id $IGW_ID
             fi
             
-            # Finalmente deletar a VPC
+            # 10. Finalmente deletar a VPC
+            echo "Removendo VPC..."
             aws ec2 delete-vpc --vpc-id $VPC_ID
           fi
 
