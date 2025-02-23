@@ -1,0 +1,5 @@
+auto_update: false
+allowed_versions:
+  - "1.0.*"
+  - "1.1.*"
+maintenance_window: "sun:02:00-sun:04:00" 

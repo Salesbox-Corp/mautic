@@ -61,7 +61,8 @@
     "grapesjs-tooltip": "^0.1.8",
     "grapesjs-touch": "^0.1.1",
     "grapesjs-tui-image-editor": "^1.0.2",
-    "grapesjs-typed": "^2.0.1"
+    "grapesjs-typed": "^2.0.1",
+    "grapesjsbuilderbundle": "file:"
   },
   "devDependencies": {
     "@babel/cli": "^7.16.8",

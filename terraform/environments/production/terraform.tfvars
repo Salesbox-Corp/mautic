@@ -1,8 +1,11 @@
+client      = "salesbox"
+environment = "demo"
+project     = "mautic"
+
 aws_region = "us-east-1"
-project_name = "mautic-prod"
-db_name = "mautic_prod"
+db_name = "mautic_salesbox_demo"
 db_username = "mautic_admin"
-ecr_repository_url = "seu-repo-ecr.amazonaws.com/mautic"
+ecr_repository_url = "seu-account-id.dkr.ecr.us-east-1.amazonaws.com/mautic-salesbox-demo"
 certificate_arn = "arn:aws:acm:region:account:certificate/certificate-id"
 
-environment = "production" 
+# Outros parâmetros específicos do cliente 

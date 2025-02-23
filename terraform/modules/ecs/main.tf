@@ -7,6 +7,19 @@ resource "aws_ecs_cluster" "main" {
   }
 }
 
+# Buscar credenciais do Secrets Manager
+data "aws_secretsmanager_secret" "mautic_credentials" {
+  name = "/mautic/${var.client}/${var.environment}/credentials"
+}
+
+data "aws_secretsmanager_secret_version" "current" {
+  secret_id = data.aws_secretsmanager_secret.mautic_credentials.id
+}
+
+locals {
+  credentials = jsondecode(data.aws_secretsmanager_secret_version.current.secret_string)
+}
+
 resource "aws_ecs_task_definition" "mautic" {
   family                   = "${var.project_name}-task"
   network_mode             = "awsvpc"
@@ -21,7 +34,36 @@ resource "aws_ecs_task_definition" "mautic" {
       name  = "mautic"
       image = "${var.ecr_repository_url}:latest"
       
-      environment = var.container_environment
+      environment = [
+        {
+          name  = "MAUTIC_DB_HOST"
+          value = var.db_host
+        },
+        {
+          name  = "MAUTIC_DB_NAME"
+          value = var.db_name
+        },
+        {
+          name  = "MAUTIC_DB_USER"
+          value = var.db_username
+        },
+        {
+          name  = "MAUTIC_DB_PASSWORD"
+          value = local.credentials.db_password
+        },
+        {
+          name  = "MAUTIC_ADMIN_USERNAME"
+          value = local.credentials.mautic_admin_user
+        },
+        {
+          name  = "MAUTIC_ADMIN_PASSWORD"
+          value = local.credentials.mautic_admin_password
+        },
+        {
+          name  = "MAUTIC_ADMIN_EMAIL"
+          value = local.credentials.mautic_admin_email
+        }
+      ]
 
       portMappings = [
         {

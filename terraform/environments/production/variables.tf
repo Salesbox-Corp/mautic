@@ -11,25 +11,32 @@ variable "project_name" {
 variable "vpc_cidr" {
   description = "CIDR da VPC"
   type        = string
-  default     = "10.0.0.0/16"
+  default     = "172.31.128.0/24"
 }
 
 variable "availability_zones" {
   description = "AZs a serem utilizadas"
   type        = list(string)
-  default     = ["us-east-1a", "us-east-1b", "us-east-1c"]
+  default     = ["us-east-1a", "us-east-1b"]
 }
 
 variable "private_subnet_cidrs" {
   description = "CIDRs das subnets privadas"
   type        = list(string)
-  default     = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+  default     = [
+    "172.31.128.0/26",
+    "172.31.128.64/26",
+    "172.31.128.128/26"
+  ]
 }
 
 variable "public_subnet_cidrs" {
   description = "CIDRs das subnets públicas"
   type        = list(string)
-  default     = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
+  default     = [
+    "172.31.128.0/25",
+    "172.31.128.128/25",
+  ]
 }
 
 variable "db_instance_class" {

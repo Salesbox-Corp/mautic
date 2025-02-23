@@ -1,0 +1,29 @@
+name: Initialize New Client
+
+on:
+  workflow_dispatch:
+    inputs:
+      client:
+        description: 'Nome do cliente'
+        required: true
+      environment:
+        description: 'Ambiente (demo/staging/prod)'
+        required: true
+        default: 'demo'
+
+jobs:
+  init:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Initialize client infrastructure
+        run: |
+          ./scripts/init-client.sh ${{ github.event.inputs.client }} ${{ github.event.inputs.environment }} 
