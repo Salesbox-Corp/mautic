@@ -1,0 +1,123 @@
+name: Destroy Base Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Digite DESTROY-BASE-INFRA para confirmar'
+        required: true
+      force:
+        description: 'Forçar destruição mesmo com clientes ativos?'
+        type: boolean
+        required: true
+        default: false
+
+env:
+  AWS_REGION: us-east-2
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check Confirmation
+        if: inputs.confirmation != 'DESTROY-BASE-INFRA'
+        run: |
+          echo "Erro: Confirmação incorreta"
+          exit 1
+
+      - name: Check Active Clients
+        if: inputs.force != true
+        run: |
+          # Verificar se existem clusters ECS ativos
+          CLUSTERS=$(aws ecs list-clusters --query 'clusterArns[]' --output text)
+          if [ ! -z "$CLUSTERS" ]; then
+            echo "Erro: Existem clusters ECS ativos. Destrua os ambientes dos clientes primeiro."
+            exit 1
+          fi
+
+          # Verificar se existem bancos de dados de clientes
+          RDS_CREDENTIALS=$(aws secretsmanager get-secret-value \
+            --secret-id "/mautic/shared/rds/master" \
+            --query 'SecretString' --output text)
+          
+          RDS_ENDPOINT=$(aws ssm get-parameter \
+            --name "/mautic/shared/rds/endpoint" \
+            --query "Parameter.Value" --output text)
+          
+          MASTER_USER=$(echo $RDS_CREDENTIALS | jq -r '.username')
+          MASTER_PASSWORD=$(echo $RDS_CREDENTIALS | jq -r '.password')
+          
+          DB_COUNT=$(mysql -h $RDS_ENDPOINT -u $MASTER_USER -p${MASTER_PASSWORD} \
+            -N -e "SHOW DATABASES LIKE 'mautic_%';" | wc -l)
+          
+          if [ "$DB_COUNT" -gt 1 ]; then
+            echo "Erro: Existem bancos de dados de clientes. Destrua os ambientes dos clientes primeiro."
+            exit 1
+          fi
+
+  destroy:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Destroy Base Infrastructure
+        run: |
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
+
+          echo "Destruindo infraestrutura base..."
+
+          cd terraform/base
+          terraform init \
+            -backend-config="bucket=${BUCKET_NAME}" \
+            -backend-config="key=base/terraform.tfstate"
+          
+          terraform destroy -auto-approve
+
+      - name: Cleanup Shared Resources
+        run: |
+          # Remover secrets compartilhados
+          aws secretsmanager delete-secret \
+            --secret-id "/mautic/shared/rds/master" \
+            --force-delete-without-recovery || true
+
+          # Remover parâmetros compartilhados
+          aws ssm delete-parameters \
+            --names "/mautic/shared/rds/endpoint" || true
+
+          # Remover bucket do Terraform state (opcional)
+          if [ "${{ github.event.inputs.force }}" == "true" ]; then
+            AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
+            
+            aws s3 rm s3://${BUCKET_NAME} --recursive
+            aws s3api delete-bucket --bucket ${BUCKET_NAME}
+            
+            # Remover tabela do DynamoDB
+            aws dynamodb delete-table --table-name mautic-terraform-lock
+          fi
+
+      - name: Notify Completion
+        if: success()
+        run: |
+          echo "Infraestrutura base destruída com sucesso" 

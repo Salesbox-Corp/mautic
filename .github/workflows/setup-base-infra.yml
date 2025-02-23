@@ -1,0 +1,113 @@
+name: Setup Base Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      force_recreate:
+        description: 'Forçar recriação da infra base? (CUIDADO)'
+        type: boolean
+        required: true
+        default: false
+
+env:
+  AWS_REGION: us-east-2
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check Existing Infrastructure
+        id: check
+        run: |
+          # Verificar se VPC existe
+          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=mautic-shared-vpc" --query 'Vpcs[0].VpcId' --output text)
+          if [ "$VPC_ID" != "None" ] && [ "${{ github.event.inputs.force_recreate }}" != "true" ]; then
+            echo "Infraestrutura base já existe. Use force_recreate=true para recriar."
+            exit 1
+          fi
+
+  setup_base:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Create Base Infrastructure
+        run: |
+          # Obter ID da conta AWS
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
+
+          # Criar bucket e DynamoDB se não existirem
+          ./scripts/bootstrap.sh
+
+          cd terraform/base
+          
+          # Inicializar Terraform
+          terraform init \
+            -backend-config="bucket=${BUCKET_NAME}" \
+            -backend-config="key=base/terraform.tfstate"
+          
+          terraform plan -out=tfplan
+          terraform apply tfplan
+
+      - name: Verify Base Infrastructure
+        run: |
+          # Verificar VPC
+          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=mautic-shared-vpc" --query 'Vpcs[0].VpcId' --output text)
+          if [ "$VPC_ID" == "None" ]; then
+            echo "Erro: VPC não encontrada"
+            exit 1
+          fi
+
+          # Verificar RDS
+          RDS_STATUS=$(aws rds describe-db-instances --db-instance-identifier mautic-shared-db --query 'DBInstances[0].DBInstanceStatus' --output text)
+          if [ "$RDS_STATUS" != "available" ]; then
+            echo "Erro: RDS não está disponível"
+            exit 1
+          fi
+
+  cleanup_on_failure:
+    if: failure()
+    needs: [setup_base]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Cleanup Failed Infrastructure
+        run: |
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
+
+          cd terraform/base
+          terraform init \
+            -backend-config="bucket=${BUCKET_NAME}" \
+            -backend-config="key=base/terraform.tfstate"
+          
+          terraform destroy -auto-approve 

@@ -1,0 +1,109 @@
+name: Destroy Client Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      client:
+        description: 'Nome do cliente'
+        required: true
+      environment:
+        description: 'Ambiente (prod/staging/demo)'
+        required: true
+        default: 'demo'
+      confirmation:
+        description: 'Digite o nome do cliente para confirmar'
+        required: true
+
+env:
+  AWS_REGION: us-east-2
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Confirmation
+        if: inputs.confirmation != inputs.client
+        run: |
+          echo "Erro: Confirmação não corresponde ao nome do cliente"
+          exit 1
+
+  destroy:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Destroy Client Infrastructure
+        run: |
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
+          CLIENT="${{ github.event.inputs.client }}"
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+
+          echo "Destruindo infraestrutura do cliente ${CLIENT}/${ENVIRONMENT}..."
+
+          # Destruir recursos do Terraform
+          cd terraform/environments/clients/${CLIENT}/${ENVIRONMENT}
+          terraform init \
+            -backend-config="bucket=${BUCKET_NAME}" \
+            -backend-config="key=clients/${CLIENT}/${ENVIRONMENT}/terraform.tfstate"
+          
+          terraform destroy -auto-approve
+
+      - name: Cleanup Client Resources
+        run: |
+          CLIENT="${{ github.event.inputs.client }}"
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+
+          # Remover banco de dados do cliente
+          RDS_CREDENTIALS=$(aws secretsmanager get-secret-value \
+            --secret-id "/mautic/shared/rds/master" \
+            --query 'SecretString' --output text)
+          
+          RDS_ENDPOINT=$(aws ssm get-parameter \
+            --name "/mautic/shared/rds/endpoint" \
+            --query "Parameter.Value" --output text)
+          
+          MASTER_USER=$(echo $RDS_CREDENTIALS | jq -r '.username')
+          MASTER_PASSWORD=$(echo $RDS_CREDENTIALS | jq -r '.password')
+          
+          DB_NAME="mautic_${CLIENT}_${ENVIRONMENT}"
+          DB_USER="${DB_NAME}_user"
+          
+          mysql -h $RDS_ENDPOINT -u $MASTER_USER -p${MASTER_PASSWORD} <<EOF
+          DROP DATABASE IF EXISTS ${DB_NAME};
+          DROP USER IF EXISTS '${DB_USER}'@'%';
+          FLUSH PRIVILEGES;
+EOF
+
+          # Remover repositório ECR
+          aws ecr delete-repository \
+            --repository-name "mautic-${CLIENT}-${ENVIRONMENT}" \
+            --force || true
+
+          # Remover secrets e parâmetros
+          aws secretsmanager delete-secret \
+            --secret-id "/mautic/${CLIENT}/${ENVIRONMENT}/credentials" \
+            --force-delete-without-recovery || true
+
+          aws ssm delete-parameters \
+            --names \
+              "/mautic/${CLIENT}/${ENVIRONMENT}/config/domain" \
+              "/mautic/${CLIENT}/${ENVIRONMENT}/config/email_from" \
+              "/mautic/${CLIENT}/${ENVIRONMENT}/database/name" \
+              "/mautic/${CLIENT}/${ENVIRONMENT}/database/user" || true
+
+      - name: Notify Completion
+        if: success()
+        run: |
+          echo "Cliente ${{ github.event.inputs.client }}/${{ github.event.inputs.environment }} destruído com sucesso" 

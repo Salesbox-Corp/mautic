@@ -1,0 +1,49 @@
+name: Update Client Mautic
+
+on:
+  workflow_dispatch:
+    inputs:
+      client:
+        description: 'Cliente para atualizar'
+        required: true
+      environment:
+        description: 'Ambiente (demo/staging/prod)'
+        required: true
+        default: 'demo'
+      version:
+        description: 'Versão do Mautic'
+        required: true
+
+env:
+  AWS_REGION: us-east-2
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build and Push Image
+        run: |
+          ECR_REPOSITORY="mautic-${{ github.event.inputs.client }}-${{ github.event.inputs.environment }}"
+          
+          # Login no ECR
+          aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_REGION.amazonaws.com
+          
+          # Build e push
+          docker build -t $ECR_REPOSITORY:${{ github.event.inputs.version }} .
+          docker push $ECR_REPOSITORY:${{ github.event.inputs.version }}
+
+      - name: Update ECS Service
+        run: |
+          CLUSTER="mautic-${{ github.event.inputs.client }}-${{ github.event.inputs.environment }}-cluster"
+          SERVICE="mautic-${{ github.event.inputs.client }}-${{ github.event.inputs.environment }}-service"
+          
+          aws ecs update-service --cluster $CLUSTER --service $SERVICE --force-new-deployment 

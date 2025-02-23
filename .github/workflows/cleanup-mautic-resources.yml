@@ -1,0 +1,156 @@
+name: Cleanup Mautic Resources in Ohio
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Digite CLEANUP-MAUTIC-OHIO para confirmar'
+        required: true
+
+env:
+  AWS_REGION: us-east-2
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check Confirmation
+        if: inputs.confirmation != 'CLEANUP-MAUTIC-OHIO'
+        run: |
+          echo "Erro: Confirmação incorreta"
+          exit 1
+
+      - name: Cleanup ECS Resources
+        run: |
+          echo "Limpando recursos ECS..."
+          
+          # Listar e deletar clusters que começam com mautic-
+          for CLUSTER in $(aws ecs list-clusters --query 'clusterArns[*]' --output text | grep 'mautic-'); do
+            # Primeiro, parar todas as tasks
+            TASKS=$(aws ecs list-tasks --cluster $CLUSTER --query 'taskArns[*]' --output text)
+            if [ ! -z "$TASKS" ]; then
+              aws ecs stop-task --cluster $CLUSTER --task $TASKS
+            fi
+            
+            # Atualizar serviços para desired count 0
+            SERVICES=$(aws ecs list-services --cluster $CLUSTER --query 'serviceArns[*]' --output text)
+            if [ ! -z "$SERVICES" ]; then
+              for SERVICE in $SERVICES; do
+                aws ecs update-service --cluster $CLUSTER --service $SERVICE --desired-count 0
+                aws ecs delete-service --cluster $CLUSTER --service $SERVICE --force
+              done
+            fi
+            
+            # Deletar o cluster
+            aws ecs delete-cluster --cluster $CLUSTER
+          done
+
+      - name: Cleanup Load Balancers
+        run: |
+          echo "Limpando Load Balancers..."
+          
+          # Listar e deletar ALBs que começam com mautic-
+          for ALB in $(aws elbv2 describe-load-balancers --query 'LoadBalancers[?starts_with(LoadBalancerName, `mautic-`)].LoadBalancerArn' --output text); do
+            # Primeiro deletar os listeners
+            LISTENERS=$(aws elbv2 describe-listeners --load-balancer-arn $ALB --query 'Listeners[*].ListenerArn' --output text)
+            for LISTENER in $LISTENERS; do
+              aws elbv2 delete-listener --listener-arn $LISTENER
+            done
+            
+            # Depois deletar o ALB
+            aws elbv2 delete-load-balancer --load-balancer-arn $ALB
+          done
+          
+          # Aguardar ALBs serem deletados
+          sleep 30
+          
+          # Deletar target groups
+          for TG in $(aws elbv2 describe-target-groups --query 'TargetGroups[?starts_with(TargetGroupName, `mautic-`)].TargetGroupArn' --output text); do
+            aws elbv2 delete-target-group --target-group-arn $TG
+          done
+
+      - name: Cleanup ECR Repositories
+        run: |
+          echo "Limpando repositórios ECR..."
+          
+          # Listar e deletar repositórios que começam com mautic-
+          for REPO in $(aws ecr describe-repositories --query 'repositories[?starts_with(repositoryName, `mautic-`)].repositoryName' --output text); do
+            aws ecr delete-repository --repository-name $REPO --force
+          done
+
+      - name: Cleanup Security Groups
+        run: |
+          echo "Limpando Security Groups..."
+          
+          # Listar security groups que começam com mautic-
+          for SG in $(aws ec2 describe-security-groups --filters "Name=group-name,Values=mautic-*" --query 'SecurityGroups[*].GroupId' --output text); do
+            aws ec2 delete-security-group --group-id $SG || true
+          done
+
+      - name: Cleanup VPC Resources
+        run: |
+          echo "Limpando recursos de VPC..."
+          
+          # Encontrar VPC com tag mautic-shared-vpc
+          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=mautic-shared-vpc" --query 'Vpcs[0].VpcId' --output text)
+          
+          if [ "$VPC_ID" != "None" ]; then
+            # Deletar subnets
+            for SUBNET in $(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query 'Subnets[*].SubnetId' --output text); do
+              aws ec2 delete-subnet --subnet-id $SUBNET
+            done
+            
+            # Deletar route tables
+            for RT in $(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" --query 'RouteTables[?RouteTableId!=`null`].RouteTableId' --output text); do
+              if [ "$RT" != "$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" --query 'RouteTables[?Associations[?Main!=`false`]].RouteTableId' --output text)" ]; then
+                aws ec2 delete-route-table --route-table-id $RT
+              fi
+            done
+            
+            # Deletar internet gateway
+            IGW_ID=$(aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$VPC_ID" --query 'InternetGateways[0].InternetGatewayId' --output text)
+            if [ "$IGW_ID" != "None" ]; then
+              aws ec2 detach-internet-gateway --internet-gateway-id $IGW_ID --vpc-id $VPC_ID
+              aws ec2 delete-internet-gateway --internet-gateway-id $IGW_ID
+            fi
+            
+            # Finalmente deletar a VPC
+            aws ec2 delete-vpc --vpc-id $VPC_ID
+          fi
+
+      - name: Cleanup RDS Resources
+        run: |
+          echo "Limpando recursos RDS..."
+          
+          # Deletar parameter groups
+          for PG in $(aws rds describe-db-parameter-groups --query 'DBParameterGroups[?starts_with(DBParameterGroupName, `mautic-`)].DBParameterGroupName' --output text); do
+            aws rds delete-db-parameter-group --db-parameter-group-name $PG || true
+          done
+          
+          # Deletar subnet groups
+          for SG in $(aws rds describe-db-subnet-groups --query 'DBSubnetGroups[?starts_with(DBSubnetGroupName, `mautic-`)].DBSubnetGroupName' --output text); do
+            aws rds delete-db-subnet-group --db-subnet-group-name $SG || true
+          done
+
+      - name: Cleanup Secrets and Parameters
+        run: |
+          echo "Limpando Secrets e Parameters..."
+          
+          # Deletar secrets que começam com /mautic/
+          for SECRET in $(aws secretsmanager list-secrets --query 'SecretList[?starts_with(Name, `/mautic/`)].Name' --output text); do
+            aws secretsmanager delete-secret --secret-id $SECRET --force-delete-without-recovery || true
+          done
+          
+          # Deletar parâmetros que começam com /mautic/
+          aws ssm delete-parameters --names $(aws ssm describe-parameters --parameter-filters "Key=Name,Values=/mautic/,Option=BeginsWith" --query 'Parameters[*].Name' --output text) || true
+
+      - name: Notify Completion
+        run: |
+          echo "Limpeza dos recursos Mautic em Ohio concluída" 
