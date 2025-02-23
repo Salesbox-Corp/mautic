@@ -1,6 +1,12 @@
+# Provider configuration
+provider "aws" {
+  region = var.aws_region
+}
+
 # VPC Compartilhada
 module "shared_vpc" {
   source = "../modules/shared_vpc"
+  aws_region = var.aws_region
 }
 
 # RDS Compartilhado

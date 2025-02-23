@@ -1,0 +1,1 @@
+aws_region = "us-east-2"  # ou a região que você preferir como padrão 
