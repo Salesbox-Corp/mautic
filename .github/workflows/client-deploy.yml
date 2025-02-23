@@ -15,11 +15,6 @@ on:
         required: true
         default: 'latest'
 
-  push:
-    branches:
-      - clients/**
-      - releases/**
-
 jobs:
   prepare:
     runs-on: ubuntu-latest
