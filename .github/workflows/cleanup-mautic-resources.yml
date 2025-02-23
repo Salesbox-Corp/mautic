@@ -134,13 +134,33 @@ jobs:
               aws elbv2 delete-target-group --target-group-arn $TG
             done
 
-            # 4. Remover ENIs
+            # 4. Remover RDS Instances
+            echo "Removendo RDS Instances..."
+            for DB in $(aws rds describe-db-instances --query 'DBInstances[?starts_with(DBInstanceIdentifier, `mautic-`)].DBInstanceIdentifier' --output text); do
+              aws rds delete-db-instance --db-instance-identifier $DB --skip-final-snapshot --delete-automated-backups || true
+            done
+
+            # Aguardar RDS ser deletado
+            echo "Aguardando RDS ser removido..."
+            sleep 300  # 5 minutos para garantir que o RDS foi deletado
+
+            # 5. Remover RDS Subnet Groups e Parameter Groups
+            echo "Removendo RDS Subnet Groups e Parameter Groups..."
+            for SG in $(aws rds describe-db-subnet-groups --query 'DBSubnetGroups[?starts_with(DBSubnetGroupName, `mautic-`)].DBSubnetGroupName' --output text); do
+              aws rds delete-db-subnet-group --db-subnet-group-name $SG || true
+            done
+
+            for PG in $(aws rds describe-db-parameter-groups --query 'DBParameterGroups[?starts_with(DBParameterGroupName, `mautic-`)].DBParameterGroupName' --output text); do
+              aws rds delete-db-parameter-group --db-parameter-group-name $PG || true
+            done
+
+            # 6. Remover ENIs
             echo "Removendo Network Interfaces..."
             for ENI in $(aws ec2 describe-network-interfaces --filters "Name=vpc-id,Values=$VPC_ID" --query 'NetworkInterfaces[*].NetworkInterfaceId' --output text); do
               aws ec2 delete-network-interface --network-interface-id $ENI || true
             done
 
-            # 5. Remover EFS Mount Targets
+            # 7. Remover EFS Mount Targets
             echo "Removendo EFS Mount Targets..."
             for EFS in $(aws efs describe-file-systems --query 'FileSystems[?contains(Tags[?Key==`Name`].Value, `mautic`)].FileSystemId' --output text); do
               for MT in $(aws efs describe-mount-targets --file-system-id $EFS --query 'MountTargets[*].MountTargetId' --output text); do
@@ -151,7 +171,7 @@ jobs:
               aws efs delete-file-system --file-system-id $EFS
             done
 
-            # 6. Remover Security Groups (exceto o default)
+            # 8. Remover Security Groups (exceto o default)
             echo "Removendo Security Groups..."
             DEFAULT_SG=$(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$VPC_ID" "Name=group-name,Values=default" --query 'SecurityGroups[0].GroupId' --output text)
             for SG in $(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$VPC_ID" --query 'SecurityGroups[*].GroupId' --output text); do
@@ -160,13 +180,13 @@ jobs:
               fi
             done
 
-            # 7. Remover subnets
+            # 9. Remover subnets
             echo "Removendo Subnets..."
             for SUBNET in $(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query 'Subnets[*].SubnetId' --output text); do
               aws ec2 delete-subnet --subnet-id $SUBNET || true
             done
             
-            # 8. Remover route tables (exceto a main)
+            # 10. Remover route tables (exceto a main)
             echo "Removendo Route Tables..."
             MAIN_RT=$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" "Name=association.main,Values=true" --query 'RouteTables[0].RouteTableId' --output text)
             for RT in $(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" --query 'RouteTables[*].RouteTableId' --output text); do
@@ -175,7 +195,7 @@ jobs:
               fi
             done
             
-            # 9. Remover internet gateway
+            # 11. Remover internet gateway
             echo "Removendo Internet Gateway..."
             IGW_ID=$(aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$VPC_ID" --query 'InternetGateways[0].InternetGatewayId' --output text)
             if [ "$IGW_ID" != "None" ]; then
@@ -183,7 +203,7 @@ jobs:
               aws ec2 delete-internet-gateway --internet-gateway-id $IGW_ID
             fi
             
-            # 10. Finalmente deletar a VPC
+            # 12. Finalmente deletar a VPC
             echo "Removendo VPC..."
             aws ec2 delete-vpc --vpc-id $VPC_ID
           fi
