@@ -3,6 +3,10 @@ name: Destroy Base Infrastructure
 on:
   workflow_dispatch:
     inputs:
+      aws_region:
+        description: 'AWS Region (ex: us-east-2)'
+        required: true
+        default: 'us-east-2'
       confirmation:
         description: 'Digite DESTROY-BASE-INFRA para confirmar'
         required: true
@@ -13,7 +17,7 @@ on:
         default: false
 
 env:
-  AWS_REGION: us-east-2
+  AWS_REGION: ${{ github.event.inputs.aws_region }}
 
 jobs:
   validate:

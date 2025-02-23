@@ -3,6 +3,15 @@ name: Setup Base Infrastructure
 on:
   workflow_dispatch:
     inputs:
+      aws_region:
+        description: 'AWS Region para recursos (não alterar sem motivo)'
+        required: true
+        default: 'us-east-2'
+        type: choice
+        options:
+          - 'us-east-2'  # Ohio (recomendado)
+          - 'us-east-1'  # Virginia
+          - 'us-west-2'  # Oregon
       force_recreate:
         description: 'Forçar recriação da infra base? (CUIDADO)'
         type: boolean
@@ -10,7 +19,7 @@ on:
         default: false
 
 env:
-  AWS_REGION: us-east-2
+  AWS_REGION: ${{ github.event.inputs.aws_region }}
 
 jobs:
   validate:
@@ -53,21 +62,19 @@ jobs:
 
       - name: Create Base Infrastructure
         run: |
-          # Obter ID da conta AWS
           AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
 
-          # Criar bucket e DynamoDB se não existirem
-          ./scripts/bootstrap.sh
-
           cd terraform/base
           
-          # Inicializar Terraform
+          # Inicializar Terraform com região específica
           terraform init \
             -backend-config="bucket=${BUCKET_NAME}" \
-            -backend-config="key=base/terraform.tfstate"
+            -backend-config="key=base/terraform.tfstate" \
+            -backend-config="region=${AWS_REGION}"
           
-          terraform plan -out=tfplan
+          # Passar região como variável
+          terraform plan -var="aws_region=${AWS_REGION}" -out=tfplan
           terraform apply tfplan
 
       - name: Verify Base Infrastructure

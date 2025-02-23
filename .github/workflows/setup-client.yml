@@ -3,6 +3,10 @@ name: Setup New Client
 on:
   workflow_dispatch:
     inputs:
+      aws_region:
+        description: 'AWS Region (ex: us-east-2)'
+        required: true
+        default: 'us-east-2'
       client:
         description: 'Nome do cliente'
         required: true
@@ -12,7 +16,7 @@ on:
         default: 'demo'
 
 env:
-  AWS_REGION: us-east-2
+  AWS_REGION: ${{ github.event.inputs.aws_region }}
 
 jobs:
   validate:
@@ -51,4 +55,7 @@ jobs:
 
       - name: Setup Client
         run: |
-          ./scripts/setup-client.sh ${{ github.event.inputs.client }} ${{ github.event.inputs.environment }} 
+          ./scripts/setup-client.sh \
+            ${{ github.event.inputs.client }} \
+            ${{ github.event.inputs.environment }} \
+            ${{ env.AWS_REGION }} 

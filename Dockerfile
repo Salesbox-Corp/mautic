@@ -35,4 +35,9 @@ COPY . .
 RUN composer install --no-dev --optimize-autoloader
 
 # Configurar permissões
-RUN chown -R www-data:www-data . 
+RUN chown -R www-data:www-data .
+
+# Criar diretório de mídia com permissões corretas
+RUN mkdir -p /var/www/html/media && \
+    chown -R www-data:www-data /var/www/html/media && \
+    chmod -R 755 /var/www/html/media 

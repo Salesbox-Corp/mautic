@@ -51,4 +51,82 @@ variable "client" {
 variable "environment" {
   description = "Ambiente (demo/staging/prod)"
   type        = string
+}
+
+variable "desired_count" {
+  description = "Número desejado de tasks"
+  type        = number
+  default     = 1
+}
+
+variable "min_capacity" {
+  description = "Capacidade mínima do auto scaling"
+  type        = number
+  default     = 1
+}
+
+variable "max_capacity" {
+  description = "Capacidade máxima do auto scaling"
+  type        = number
+  default     = 4
+}
+
+variable "target_cpu_utilization" {
+  description = "Target de utilização de CPU para scaling (percentual)"
+  type        = number
+  default     = 70
+}
+
+variable "target_memory_utilization" {
+  description = "Target de utilização de memória para scaling (percentual)"
+  type        = number
+  default     = 70
+}
+
+variable "target_alb_request_count" {
+  description = "Target de requisições por target para scaling"
+  type        = number
+  default     = 1000  # Requisições por minuto por target
+}
+
+variable "alarm_actions" {
+  description = "Lista de ARNs para notificação de alarmes (ex: SNS)"
+  type        = list(string)
+  default     = []
+}
+
+variable "scale_in_cooldown" {
+  description = "Tempo em segundos antes de permitir outro scale in"
+  type        = number
+  default     = 300
+}
+
+variable "scale_out_cooldown" {
+  description = "Tempo em segundos antes de permitir outro scale out"
+  type        = number
+  default     = 180
+}
+
+variable "efs_performance_mode" {
+  description = "Performance mode do EFS (generalPurpose ou maxIO)"
+  type        = string
+  default     = "generalPurpose"
+}
+
+variable "efs_throughput_mode" {
+  description = "Throughput mode do EFS (bursting ou provisioned)"
+  type        = string
+  default     = "bursting"
+}
+
+variable "efs_provisioned_throughput" {
+  description = "Throughput provisionado em MiB/s (se modo provisioned)"
+  type        = number
+  default     = null
+}
+
+variable "efs_ia_lifecycle_policy" {
+  description = "Política de transição para IA (em dias)"
+  type        = string
+  default     = "AFTER_30_DAYS"
 } 

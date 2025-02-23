@@ -1,14 +1,18 @@
-name: Cleanup Mautic Resources in Ohio
+name: Cleanup Mautic Resources
 
 on:
   workflow_dispatch:
     inputs:
+      aws_region:
+        description: 'AWS Region (ex: us-east-2)'
+        required: true
+        default: 'us-east-2'
       confirmation:
-        description: 'Digite CLEANUP-MAUTIC-OHIO para confirmar'
+        description: 'Digite CLEANUP-MAUTIC para confirmar'
         required: true
 
 env:
-  AWS_REGION: us-east-2
+  AWS_REGION: ${{ github.event.inputs.aws_region }}
 
 jobs:
   cleanup:
@@ -22,7 +26,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Check Confirmation
-        if: inputs.confirmation != 'CLEANUP-MAUTIC-OHIO'
+        if: inputs.confirmation != 'CLEANUP-MAUTIC'
         run: |
           echo "Erro: Confirmação incorreta"
           exit 1
@@ -153,4 +157,4 @@ jobs:
 
       - name: Notify Completion
         run: |
-          echo "Limpeza dos recursos Mautic em Ohio concluída" 
+          echo "Limpeza dos recursos Mautic concluída" 

@@ -3,6 +3,10 @@ name: Destroy Client Environment
 on:
   workflow_dispatch:
     inputs:
+      aws_region:
+        description: 'AWS Region (ex: us-east-2)'
+        required: true
+        default: 'us-east-2'
       client:
         description: 'Nome do cliente'
         required: true
@@ -15,7 +19,7 @@ on:
         required: true
 
 env:
-  AWS_REGION: us-east-2
+  AWS_REGION: ${{ github.event.inputs.aws_region }}
 
 jobs:
   validate:

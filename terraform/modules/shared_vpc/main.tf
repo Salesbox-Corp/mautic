@@ -14,7 +14,11 @@ module "vpc" {
   name = "mautic-shared-vpc"
   cidr = "172.31.0.0/16"
 
-  azs             = ["us-east-2a", "us-east-2b"]
+  # Usar variável de região para determinar AZs
+  azs = [
+    "${var.aws_region}a",
+    "${var.aws_region}b"
+  ]
   public_subnets  = ["172.31.1.0/24", "172.31.2.0/24"]
   
   enable_nat_gateway = false
@@ -42,4 +46,9 @@ output "vpc_id" {
 
 output "public_subnet_ids" {
   value = module.vpc.public_subnets
+}
+
+variable "aws_region" {
+  description = "AWS Region"
+  type        = string
 } 

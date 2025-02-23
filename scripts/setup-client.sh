@@ -2,16 +2,17 @@
 
 CLIENT=$1
 ENVIRONMENT=$2
+AWS_REGION=${3:-"us-east-2"}  # Região como terceiro parâmetro, default us-east-2
 
 if [ -z "$CLIENT" ] || [ -z "$ENVIRONMENT" ]; then
-    echo "Usage: ./setup-client.sh <client_name> <environment>"
+    echo "Usage: ./setup-client.sh <client_name> <environment> [aws_region]"
     exit 1
 fi
 
-echo "Iniciando setup para ${CLIENT} em ambiente ${ENVIRONMENT}..."
+echo "Iniciando setup para ${CLIENT}/${ENVIRONMENT} na região ${AWS_REGION}..."
 
 # Login no ECR
-aws ecr get-login-password --region us-east-2 | docker login --username AWS --password-stdin $(aws sts get-caller-identity --query Account --output text).dkr.ecr.us-east-2.amazonaws.com
+aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin $(aws sts get-caller-identity --query Account --output text).dkr.ecr.${AWS_REGION}.amazonaws.com
 
 # Criar secrets e configurações
 ./scripts/manage-secrets.sh create_client_secrets $CLIENT $ENVIRONMENT
@@ -23,13 +24,12 @@ aws ecr get-login-password --region us-east-2 | docker login --username AWS --pa
 CLIENT_DIR="terraform/environments/clients/${CLIENT}/${ENVIRONMENT}"
 mkdir -p "${CLIENT_DIR}"
 
-# Gerar terraform.tfvars (sem configurações de VPC)
+# Gerar terraform.tfvars com região correta
 cat > "${CLIENT_DIR}/terraform.tfvars" <<EOF
 client      = "${CLIENT}"
 environment = "${ENVIRONMENT}"
 project     = "mautic"
-
-aws_region = "us-east-1"
+aws_region  = "${AWS_REGION}"
 
 task_cpu    = 1024
 task_memory = 2048
