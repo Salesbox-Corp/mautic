@@ -196,6 +196,9 @@ jobs:
     if: failure()
     needs: [setup]
     runs-on: ubuntu-latest
+    env:
+      CLIENT: ${{ github.event.inputs.client }}
+      ENVIRONMENT: ${{ github.event.inputs.environment }}
     steps:
       - uses: actions/checkout@v4
       
@@ -209,35 +212,75 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Cleanup Resources
+      - name: Cleanup Client Resources
         run: |
-          if [[ "${{ github.event.inputs.create_shared_infra }}" == "true" ]]; then
-            echo "Limpando infraestrutura compartilhada..."
-            cd terraform/shared
-            terraform init \
-              -backend-config="bucket=mautic-terraform-state" \
-              -backend-config="key=shared/terraform.tfstate"
-            terraform destroy -auto-approve || true
-          fi
+          echo "Limpando recursos do cliente ${CLIENT}/${ENVIRONMENT}..."
           
-          echo "Limpando recursos do cliente..."
-          cd terraform/environments/clients/${{ github.event.inputs.client }}/${{ github.event.inputs.environment }}
+          # Remover recursos do cliente específico
+          cd terraform/environments/clients/${CLIENT}/${ENVIRONMENT}
           terraform init \
               -backend-config="bucket=mautic-terraform-state" \
-              -backend-config="key=clients/${{ github.event.inputs.client }}/${{ github.event.inputs.environment }}/terraform.tfstate"
+              -backend-config="key=clients/${CLIENT}/${ENVIRONMENT}/terraform.tfstate"
           terraform destroy -auto-approve || true
 
-      - name: Cleanup Secrets and Parameters
+          # Limpar banco de dados do cliente
+          RDS_CREDENTIALS=$(aws secretsmanager get-secret-value \
+              --secret-id "/mautic/shared/rds/master" \
+              --query 'SecretString' --output text)
+          
+          RDS_ENDPOINT=$(aws ssm get-parameter --name "/mautic/shared/rds/endpoint" --query "Parameter.Value" --output text)
+          MASTER_USER=$(echo $RDS_CREDENTIALS | jq -r '.username')
+          MASTER_PASSWORD=$(echo $RDS_CREDENTIALS | jq -r '.password')
+          
+          DB_NAME="mautic_${CLIENT}_${ENVIRONMENT}"
+          DB_USER="${DB_NAME}_user"
+          
+          mysql -h $RDS_ENDPOINT -u $MASTER_USER -p${MASTER_PASSWORD} <<EOF
+          DROP DATABASE IF EXISTS ${DB_NAME};
+          DROP USER IF EXISTS '${DB_USER}'@'%';
+          FLUSH PRIVILEGES;
+          EOF
+
+      - name: Cleanup Client Secrets and Parameters
         run: |
-          # Limpar Secrets Manager
+          # Limpar Secrets Manager específicos do cliente
           aws secretsmanager delete-secret \
             --secret-id "/mautic/${CLIENT}/${ENVIRONMENT}/credentials" \
             --force-delete-without-recovery || true
 
-          # Limpar SSM Parameters
+          # Limpar SSM Parameters específicos do cliente
           aws ssm delete-parameters \
             --names \
               "/mautic/${CLIENT}/${ENVIRONMENT}/config/domain" \
               "/mautic/${CLIENT}/${ENVIRONMENT}/config/email_from" \
               "/mautic/${CLIENT}/${ENVIRONMENT}/database/name" \
-              "/mautic/${CLIENT}/${ENVIRONMENT}/database/user" || true 
+              "/mautic/${CLIENT}/${ENVIRONMENT}/database/user" || true
+
+      # Cleanup da infra compartilhada APENAS se for o primeiro deploy e falhou
+      - name: Cleanup Shared Infrastructure
+        if: ${{ github.event.inputs.create_shared_infra == 'true' }}
+        run: |
+          echo "Verificando se existem outros clientes antes de limpar infra compartilhada..."
+          
+          # Listar todos os bancos de dados exceto o do cliente atual
+          OTHER_DBS=$(mysql -h $RDS_ENDPOINT -u $MASTER_USER -p${MASTER_PASSWORD} \
+            -e "SHOW DATABASES LIKE 'mautic_%';" | grep -v "${DB_NAME}" || true)
+          
+          if [ -z "$OTHER_DBS" ]; then
+            echo "Nenhum outro cliente encontrado. Limpando infraestrutura compartilhada..."
+            cd terraform/shared
+            terraform init \
+              -backend-config="bucket=mautic-terraform-state" \
+              -backend-config="key=shared/terraform.tfstate"
+            terraform destroy -auto-approve || true
+            
+            # Limpar secrets compartilhados
+            aws secretsmanager delete-secret \
+              --secret-id "/mautic/shared/rds/master" \
+              --force-delete-without-recovery || true
+              
+            aws ssm delete-parameter \
+              --name "/mautic/shared/rds/endpoint" || true
+          else
+            echo "Existem outros clientes. Mantendo infraestrutura compartilhada."
+          fi 
