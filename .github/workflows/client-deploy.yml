@@ -1,0 +1,78 @@
+name: Client Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      client:
+        description: 'Cliente para deploy'
+        required: true
+      environment:
+        description: 'Ambiente (demo/staging/prod)'
+        required: true
+        default: 'demo'
+      version:
+        description: 'Versão para deploy'
+        required: true
+        default: 'latest'
+
+  push:
+    branches:
+      - clients/**
+      - releases/**
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+      client: ${{ steps.extract.outputs.client }}
+      environment: ${{ steps.extract.outputs.environment }}
+    steps:
+      - id: extract
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "client=${{ github.event.inputs.client }}" >> $GITHUB_OUTPUT
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          else
+            BRANCH=${{ github.ref }}
+            if [[ $BRANCH == refs/heads/clients/* ]]; then
+              CLIENT=$(echo $BRANCH | cut -d'/' -f3)
+              ENV=$(echo $BRANCH | cut -d'/' -f4)
+              echo "client=$CLIENT" >> $GITHUB_OUTPUT
+              echo "environment=$ENV" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - id: check
+        run: |
+          if [[ -n "${{ steps.extract.outputs.client }}" ]]; then
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+          fi
+
+  deploy:
+    needs: prepare
+    if: needs.prepare.outputs.should_deploy == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.prepare.outputs.client }}-${{ needs.prepare.outputs.environment }}
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set environment variables
+        run: |
+          echo "CLIENT=${{ needs.prepare.outputs.client }}" >> $GITHUB_ENV
+          echo "ENVIRONMENT=${{ needs.prepare.outputs.environment }}" >> $GITHUB_ENV
+          echo "ECR_REPOSITORY=mautic-${{ needs.prepare.outputs.client }}-${{ needs.prepare.outputs.environment }}" >> $GITHUB_ENV
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build and Deploy
+        run: |
+          ./scripts/deploy-client.sh $CLIENT $ENVIRONMENT 

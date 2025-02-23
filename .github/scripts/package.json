@@ -4,6 +4,7 @@
     "description": "GitHub Action for handling bounty issues",
     "main": "bounties.js",
     "dependencies": {
-      "@octokit/core": "^3.5.1"
+        "@octokit/core": "^3.5.1",
+        "bounties": "file:"
     }
-  }
+}
