@@ -37,13 +37,13 @@ variable "engine" {
 variable "engine_version" {
   description = "Versão do engine"
   type        = string
-  default     = "10.3"
+  default     = "11.4.4"
 }
 
 variable "family" {
   description = "Família do parameter group"
   type        = string
-  default     = "mariadb10.3"
+  default     = "mariadb11.4"
 }
 
 variable "db_name" {

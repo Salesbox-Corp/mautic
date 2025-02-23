@@ -30,7 +30,7 @@ module "shared_rds" {
   max_allocated_storage = 100
   
   engine = "mariadb"
-  engine_version = "10.3"
+  engine_version = "11.4.4"
   
   db_name = "mautic_master"
   username = "mautic_admin"

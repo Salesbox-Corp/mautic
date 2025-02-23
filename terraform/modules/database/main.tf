@@ -5,9 +5,9 @@ module "rds" {
   identifier = "${var.project_name}-db"
 
   engine               = "mariadb"
-  engine_version       = "10.3"
-  family              = "mariadb10.3"
-  major_engine_version = "10.3"
+  engine_version       = "11.4.4"
+  family              = "mariadb11.4"
+  major_engine_version = "11.4"
   instance_class       = var.instance_class
 
   allocated_storage     = var.allocated_storage
