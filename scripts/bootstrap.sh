@@ -11,7 +11,8 @@ if ! aws s3api head-bucket --bucket $BUCKET_NAME 2>/dev/null; then
     echo "Criando bucket para Terraform state..."
     aws s3api create-bucket \
         --bucket $BUCKET_NAME \
-        --region us-east-1
+        --region us-east-2 \
+        --create-bucket-configuration LocationConstraint=us-east-2
 
     echo "Configurando bucket..."
     
