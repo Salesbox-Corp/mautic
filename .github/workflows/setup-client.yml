@@ -23,7 +23,7 @@ on:
         options:
           - 'demo'
           - 'staging'
-          - 'prod'
+          - 'prd'
 
 env:
   AWS_REGION: ${{ github.event.inputs.aws_region }}
