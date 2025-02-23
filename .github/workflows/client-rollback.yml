@@ -1,0 +1,48 @@
+name: Client Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      client:
+        description: 'Cliente para rollback'
+        required: true
+      environment:
+        description: 'Ambiente (demo/staging/prod)'
+        required: true
+        default: 'demo'
+      version:
+        description: 'Versão do state para rollback (opcional)'
+        required: false
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Execute Rollback
+        run: |
+          ./scripts/rollback-client.sh \
+            ${{ github.event.inputs.client }} \
+            ${{ github.event.inputs.environment }} \
+            ${{ github.event.inputs.version }}
+
+      - name: Notify Rollback Status
+        if: always()
+        run: |
+          if [ $? -eq 0 ]; then
+            echo "Rollback concluído com sucesso para ${{ github.event.inputs.client }}/${{ github.event.inputs.environment }}"
+          else
+            echo "Erro no rollback de ${{ github.event.inputs.client }}/${{ github.event.inputs.environment }}"
+            exit 1
+          fi 

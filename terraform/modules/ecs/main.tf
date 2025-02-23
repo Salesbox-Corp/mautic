@@ -1,3 +1,7 @@
+module "shared_vpc" {
+  source = "../shared_vpc"
+}
+
 resource "aws_ecs_cluster" "main" {
   name = "${var.project_name}-cluster"
   
@@ -83,4 +87,77 @@ resource "aws_ecs_task_definition" "mautic" {
       }
     }
   ])
+}
+
+resource "aws_lb" "main" {
+  name               = "${var.project_name}-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb.id]
+  subnets           = module.shared_vpc.public_subnet_ids
+
+  tags = var.tags
+}
+
+resource "aws_ecs_service" "main" {
+  name            = "${var.project_name}-service"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.mautic.arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets         = module.shared_vpc.public_subnet_ids
+    security_groups = [aws_security_group.ecs_tasks.id]
+    assign_public_ip = true  # Importante para subnet pública
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.main.arn
+    container_name   = "mautic"
+    container_port   = 80
+  }
+}
+
+resource "aws_security_group" "ecs_tasks" {
+  vpc_id = module.shared_vpc.vpc_id
+  # ... resto da configuração ...
+}
+
+resource "aws_security_group" "alb" {
+  vpc_id = module.shared_vpc.vpc_id
+  # ... resto da configuração ...
+}
+
+# Adicionar target group para o ALB
+resource "aws_lb_target_group" "main" {
+  name        = "${var.project_name}-tg"
+  port        = 80
+  protocol    = "HTTP"
+  vpc_id      = module.shared_vpc.vpc_id
+  target_type = "ip"
+
+  health_check {
+    healthy_threshold   = "3"
+    interval           = "30"
+    protocol           = "HTTP"
+    matcher           = "200"
+    timeout           = "3"
+    path              = "/index.php"
+    unhealthy_threshold = "2"
+  }
+
+  tags = var.tags
+}
+
+# Adicionar listener para o ALB
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = "80"
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.main.arn
+  }
 } 

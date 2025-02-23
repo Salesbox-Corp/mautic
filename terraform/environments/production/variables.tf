@@ -8,37 +8,6 @@ variable "project_name" {
   type        = string
 }
 
-variable "vpc_cidr" {
-  description = "CIDR da VPC"
-  type        = string
-  default     = "172.31.128.0/24"
-}
-
-variable "availability_zones" {
-  description = "AZs a serem utilizadas"
-  type        = list(string)
-  default     = ["us-east-1a", "us-east-1b"]
-}
-
-variable "private_subnet_cidrs" {
-  description = "CIDRs das subnets privadas"
-  type        = list(string)
-  default     = [
-    "172.31.128.0/26",
-    "172.31.128.64/26",
-    "172.31.128.128/26"
-  ]
-}
-
-variable "public_subnet_cidrs" {
-  description = "CIDRs das subnets públicas"
-  type        = list(string)
-  default     = [
-    "172.31.128.0/25",
-    "172.31.128.128/25",
-  ]
-}
-
 variable "db_instance_class" {
   description = "Classe da instância RDS"
   type        = string

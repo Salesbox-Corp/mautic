@@ -8,6 +8,10 @@ if [ -z "$CLIENT" ] || [ -z "$ENVIRONMENT" ]; then
     exit 1
 fi
 
+# Obter ID da conta AWS
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
+
 # Definir variáveis
 CLIENT_DIR="terraform/environments/clients/${CLIENT}/${ENVIRONMENT}"
 TEMPLATE_DIR="terraform/templates"
@@ -23,23 +27,6 @@ cp -r "${TEMPLATE_DIR}/client/"* "${CLIENT_DIR}/"
 sed -i "s/{{CLIENT}}/${CLIENT}/g" "${CLIENT_DIR}/terraform.tfvars"
 sed -i "s/{{ENVIRONMENT}}/${ENVIRONMENT}/g" "${CLIENT_DIR}/terraform.tfvars"
 
-# Criar bucket S3 para estado do Terraform
-aws s3api create-bucket \
-    --bucket "mautic-${CLIENT}-${ENVIRONMENT}-state" \
-    --region us-east-1
-
-# Habilitar versionamento do bucket
-aws s3api put-bucket-versioning \
-    --bucket "mautic-${CLIENT}-${ENVIRONMENT}-state" \
-    --versioning-configuration Status=Enabled
-
-# Criar tabela DynamoDB para lock
-aws dynamodb create-table \
-    --table-name "mautic-${CLIENT}-${ENVIRONMENT}-lock" \
-    --attribute-definitions AttributeName=LockID,AttributeType=S \
-    --key-schema AttributeName=LockID,KeyType=HASH \
-    --billing-mode PAY_PER_REQUEST
-
 # Criar repositório ECR
 aws ecr create-repository \
     --repository-name "mautic-${CLIENT}-${ENVIRONMENT}" \
@@ -49,8 +36,8 @@ aws ecr create-repository \
 cd "${CLIENT_DIR}"
 
 terraform init \
-    -backend-config="bucket=mautic-${CLIENT}-${ENVIRONMENT}-state" \
-    -backend-config="key=terraform.tfstate" \
-    -backend-config="dynamodb_table=mautic-${CLIENT}-${ENVIRONMENT}-lock"
+    -backend-config="bucket=${BUCKET_NAME}" \
+    -backend-config="key=clients/${CLIENT}/${ENVIRONMENT}/terraform.tfstate" \
+    -backend-config="dynamodb_table=mautic-terraform-lock"
 
 terraform apply -auto-approve 

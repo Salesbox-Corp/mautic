@@ -1,8 +1,12 @@
+module "shared_vpc" {
+  source = "../shared_vpc"
+}
+
 # Security Group para o RDS
 resource "aws_security_group" "rds" {
   name        = "mautic-shared-rds-sg"
   description = "Security group for shared RDS instance"
-  vpc_id      = var.vpc_id
+  vpc_id      = module.shared_vpc.vpc_id
 
   # Permitir acesso MySQL de qualquer lugar (para GitHub Actions)
   ingress {
@@ -28,11 +32,40 @@ resource "aws_security_group" "rds" {
 resource "aws_db_subnet_group" "public" {
   name        = "mautic-shared-rds-subnet-group"
   description = "Public subnet group for shared RDS instance"
-  subnet_ids  = var.public_subnet_ids
+  subnet_ids  = module.shared_vpc.public_subnet_ids
 
   tags = merge(var.tags, {
     Name = "mautic-shared-rds-subnet-group"
   })
+}
+
+# Verificar se o parameter group já existe
+data "aws_db_parameter_group" "existing" {
+  name = "mautic-shared-params"
+}
+
+# Criar parameter group apenas se não existir
+resource "aws_db_parameter_group" "main" {
+  count  = data.aws_db_parameter_group.existing.id == null ? 1 : 0
+  
+  family = var.family
+  name   = "mautic-shared-params"
+
+  parameter {
+    name  = "character_set_server"
+    value = "utf8mb4"
+  }
+
+  parameter {
+    name  = "character_set_client"
+    value = "utf8mb4"
+  }
+
+  tags = var.tags
+}
+
+locals {
+  parameter_group_name = try(data.aws_db_parameter_group.existing.name, aws_db_parameter_group.main[0].name)
 }
 
 # RDS Instance
@@ -58,26 +91,8 @@ resource "aws_db_instance" "shared" {
   vpc_security_group_ids = [aws_security_group.rds.id]
   
   # Parâmetros adicionais
-  parameter_group_name = aws_db_parameter_group.main.name
+  parameter_group_name = local.parameter_group_name
   
-  tags = var.tags
-}
-
-# Parameter group para configurações específicas
-resource "aws_db_parameter_group" "main" {
-  family = var.family
-  name   = "mautic-shared-params"
-
-  parameter {
-    name  = "character_set_server"
-    value = "utf8mb4"
-  }
-
-  parameter {
-    name  = "character_set_client"
-    value = "utf8mb4"
-  }
-
   tags = var.tags
 }
 

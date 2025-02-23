@@ -1,9 +1,8 @@
 terraform {
   backend "s3" {
-    bucket         = "mautic-clients-terraform-state"
-    key            = "${var.project}/${var.client}/${var.environment}/terraform.tfstate"
     region         = "us-east-1"
-    dynamodb_table = "mautic-clients-terraform-lock"
+    dynamodb_table = "mautic-terraform-lock"
     encrypt        = true
+    # bucket e key serão passados via -backend-config na inicialização
   }
 } 

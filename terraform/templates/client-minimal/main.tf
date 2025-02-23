@@ -6,14 +6,8 @@ module "naming" {
   project     = var.project
 }
 
-module "networking" {
-  source = "../../../modules/networking"
-  
-  project_name         = module.naming.prefix
-  vpc_cidr            = var.vpc_cidr
-  availability_zones  = var.availability_zones
-  public_subnet_cidrs = var.public_subnet_cidrs
-  tags                = module.naming.tags
+module "shared_vpc" {
+  source = "../../../modules/shared_vpc"
 }
 
 module "ecs" {
@@ -22,8 +16,8 @@ module "ecs" {
   project_name       = module.naming.prefix
   task_cpu          = var.task_cpu
   task_memory       = var.task_memory
-  vpc_id            = module.networking.vpc_id
-  subnet_ids        = module.networking.public_subnet_ids
+  vpc_id            = module.shared_vpc.vpc_id
+  subnet_ids        = module.shared_vpc.public_subnet_ids
   tags              = module.naming.tags
   
   environment_variables = {
