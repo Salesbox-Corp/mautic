@@ -8,6 +8,11 @@ variable "public_subnet_ids" {
   type        = list(string)
 }
 
+variable "aws_region" {
+  description = "AWS Region para criar os recursos"
+  type        = string
+}
+
 variable "identifier" {
   description = "Identificador do RDS"
   type        = string

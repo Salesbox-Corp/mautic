@@ -26,6 +26,7 @@ module "shared_rds" {
   
   vpc_id = module.shared_vpc.vpc_id
   public_subnet_ids = module.shared_vpc.public_subnet_ids
+  aws_region = var.aws_region
   
   backup_retention_period = 7
   multi_az = true
