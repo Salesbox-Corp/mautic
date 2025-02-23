@@ -39,15 +39,8 @@ resource "aws_db_subnet_group" "public" {
   })
 }
 
-# Verificar se o parameter group já existe
-data "aws_db_parameter_group" "existing" {
-  name = "mautic-shared-params"
-}
-
-# Criar parameter group apenas se não existir
+# Criar parameter group
 resource "aws_db_parameter_group" "main" {
-  count  = data.aws_db_parameter_group.existing.id == null ? 1 : 0
-  
   family = var.family
   name   = "mautic-shared-params"
 
@@ -62,10 +55,10 @@ resource "aws_db_parameter_group" "main" {
   }
 
   tags = var.tags
-}
 
-locals {
-  parameter_group_name = try(data.aws_db_parameter_group.existing.name, aws_db_parameter_group.main[0].name)
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # RDS Instance
@@ -91,7 +84,7 @@ resource "aws_db_instance" "shared" {
   vpc_security_group_ids = [aws_security_group.rds.id]
   
   # Parâmetros adicionais
-  parameter_group_name = local.parameter_group_name
+  parameter_group_name = aws_db_parameter_group.main.name
   
   tags = var.tags
 }
