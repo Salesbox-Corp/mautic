@@ -60,8 +60,12 @@ jobs:
 
       - name: Validate AWS Access
         run: |
+          # Obter ID da conta AWS
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
+          
           echo "Verificando acesso ao S3..."
-          aws s3api head-bucket --bucket mautic-terraform-state || {
+          aws s3api head-bucket --bucket $BUCKET_NAME || {
             echo "Erro: Sem acesso ao bucket do Terraform state"
             exit 1
           }
