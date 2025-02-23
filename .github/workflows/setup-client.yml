@@ -63,6 +63,11 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Make scripts executable
+        run: |
+          chmod +x scripts/*.sh
+          ls -la scripts/
+
       - name: Setup Client
         run: |
           ./scripts/setup-client.sh \
