@@ -1,5 +1,5 @@
 module "naming" {
-  source = "../../../modules/naming"
+  source = "../../../../modules/naming"
   
   client      = var.client
   environment = var.environment
@@ -7,12 +7,12 @@ module "naming" {
 }
 
 module "shared_vpc" {
-  source = "../../../modules/shared_vpc"
+  source = "../../../../modules/shared_vpc"
   aws_region = var.aws_region
 }
 
 module "ecs" {
-  source = "../../../modules/ecs"
+  source = "../../../../modules/ecs"
   
   project_name       = module.naming.prefix
   aws_region        = var.aws_region
@@ -21,6 +21,8 @@ module "ecs" {
   vpc_id            = module.shared_vpc.vpc_id
   subnet_ids        = module.shared_vpc.public_subnet_ids
   tags              = module.naming.tags
+  client            = var.client
+  environment       = var.environment
   
   environment_variables = {
     MAUTIC_DB_HOST     = var.db_host

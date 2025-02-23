@@ -75,9 +75,4 @@ EOF
 # Copiar templates
 cp -r terraform/templates/client-minimal/* "${CLIENT_DIR}/"
 
-# Inicializar e aplicar Terraform
-cd "${CLIENT_DIR}"
-terraform init
-terraform apply -auto-approve
-
 echo "Setup concluído para ${CLIENT}/${ENVIRONMENT}" 

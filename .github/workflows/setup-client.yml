@@ -79,13 +79,31 @@ jobs:
 
       - name: Create Client Directory
         run: |
+          # Criar estrutura de diretórios
           mkdir -p ${{ env.CLIENT_DIR }}
+          mkdir -p terraform/environments/clients/modules
+          
+          # Copiar módulos
+          cp -r terraform/modules/* terraform/environments/clients/modules/
+          
+          # Ajustar permissões
           chmod -R 755 terraform/environments/clients
 
       - name: Setup Client
         run: |
           AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
+
+          # Criar backend.tf no diretório do cliente
+          cat > ${{ env.CLIENT_DIR }}/backend.tf <<EOF
+          terraform {
+            backend "s3" {
+              region         = "us-east-1"
+              dynamodb_table = "mautic-terraform-lock"
+              encrypt        = true
+            }
+          }
+          EOF
 
           ./scripts/setup-client.sh \
             ${{ github.event.inputs.client }} \
