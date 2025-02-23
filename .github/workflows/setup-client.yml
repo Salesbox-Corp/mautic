@@ -4,16 +4,26 @@ on:
   workflow_dispatch:
     inputs:
       aws_region:
-        description: 'AWS Region (ex: us-east-2)'
+        description: 'AWS Region para recursos (não alterar sem motivo)'
         required: true
         default: 'us-east-2'
+        type: choice
+        options:
+          - 'us-east-2'  # Ohio (recomendado)
+          - 'us-east-1'  # Virginia
+          - 'us-west-2'  # Oregon
       client:
         description: 'Nome do cliente'
         required: true
       environment:
-        description: 'Ambiente (prod/staging/demo)'
+        description: 'Ambiente'
         required: true
+        type: choice
         default: 'demo'
+        options:
+          - 'demo'
+          - 'staging'
+          - 'prod'
 
 env:
   AWS_REGION: ${{ github.event.inputs.aws_region }}

@@ -83,7 +83,7 @@ resource "aws_ecs_task_definition" "mautic" {
         },
         {
           name  = "MAUTIC_DB_PASSWORD"
-          value = local.credentials.db_password
+          value = data.aws_secretsmanager_secret_version.db_credentials.secret_string
         },
         {
           name  = "MAUTIC_ADMIN_USERNAME"

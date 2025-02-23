@@ -38,6 +38,26 @@ module "shared_rds" {
   }
 }
 
+# Salvar endpoint do RDS no SSM
+resource "aws_ssm_parameter" "rds_endpoint" {
+  name  = "/mautic/shared/rds/endpoint"
+  type  = "String"
+  value = module.shared_rds.endpoint
+}
+
+# Salvar credenciais no Secrets Manager
+resource "aws_secretsmanager_secret" "rds_credentials" {
+  name = "/mautic/shared/rds/master"
+}
+
+resource "aws_secretsmanager_secret_version" "rds_credentials" {
+  secret_id = aws_secretsmanager_secret.rds_credentials.id
+  secret_string = jsonencode({
+    username = module.shared_rds.username
+    password = module.shared_rds.password
+  })
+}
+
 # Outputs
 output "vpc_id" {
   value = module.shared_vpc.vpc_id
