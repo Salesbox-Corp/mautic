@@ -120,4 +120,23 @@ jobs:
             -backend-config="dynamodb_table=mautic-terraform-lock"
 
           terraform plan -out=tfplan
-          terraform apply tfplan 
+          terraform apply tfplan
+
+      - name: Cleanup Failed Resources
+        if: failure()
+        run: |
+          CLIENT="${{ github.event.inputs.client }}"
+          ENVIRONMENT="${{ github.event.inputs.environment }}"
+
+          # Remover secret se existir
+          aws secretsmanager delete-secret \
+            --secret-id "/mautic/${CLIENT}/${ENVIRONMENT}/credentials" \
+            --force-delete-without-recovery || true
+
+          # Remover parâmetros SSM se existirem
+          aws ssm delete-parameters \
+            --names \
+              "/mautic/${CLIENT}/${ENVIRONMENT}/config/domain" \
+              "/mautic/${CLIENT}/${ENVIRONMENT}/config/email_from" \
+              "/mautic/${CLIENT}/${ENVIRONMENT}/database/name" \
+              "/mautic/${CLIENT}/${ENVIRONMENT}/database/user" || true 
