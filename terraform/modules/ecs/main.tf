@@ -1,5 +1,6 @@
 module "shared_vpc" {
   source = "../shared_vpc"
+  aws_region = var.aws_region
 }
 
 resource "aws_ecs_cluster" "main" {
