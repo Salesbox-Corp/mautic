@@ -48,7 +48,7 @@ module "shared_rds" {
 
 # Salvar credenciais no Secrets Manager
 resource "aws_secretsmanager_secret" "rds_master" {
-  name = "/mautic/shared/rds/master"
+  name = "/mautic/${var.aws_region}/shared/rds/master"
 }
 
 resource "aws_secretsmanager_secret_version" "rds_master" {
@@ -61,19 +61,19 @@ resource "aws_secretsmanager_secret_version" "rds_master" {
 
 # Salvar informações não sensíveis no SSM
 resource "aws_ssm_parameter" "rds_endpoint" {
-  name  = "/mautic/shared/rds/endpoint"
+  name  = "/mautic/${var.aws_region}/shared/rds/endpoint"
   type  = "String"
   value = module.shared_rds.endpoint
 }
 
 resource "aws_ssm_parameter" "vpc_id" {
-  name  = "/mautic/shared/vpc/id"
+  name  = "/mautic/${var.aws_region}/shared/vpc/id"
   type  = "String"
   value = module.shared_vpc.vpc_id
 }
 
 resource "aws_ssm_parameter" "subnet_ids" {
-  name  = "/mautic/shared/vpc/subnet_ids"
+  name  = "/mautic/${var.aws_region}/shared/vpc/subnet_ids"
   type  = "StringList"
   value = join(",", module.shared_vpc.public_subnet_ids)
 }

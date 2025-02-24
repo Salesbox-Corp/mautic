@@ -3,19 +3,28 @@
 function create_client_database() {
     CLIENT=$1
     ENVIRONMENT=$2
+    AWS_REGION=$3
+
+    if [ -z "$CLIENT" ] || [ -z "$ENVIRONMENT" ] || [ -z "$AWS_REGION" ]; then
+        echo "Usage: create_client_database <client_name> <environment> <aws_region>"
+        exit 1
+    fi
 
     # Obter credenciais do RDS master
     RDS_CREDENTIALS=$(aws secretsmanager get-secret-value \
-        --secret-id "/mautic/shared/rds/master" \
+        --secret-id "/mautic/${AWS_REGION}/shared/rds/master" \
         --query 'SecretString' --output text)
     
-    RDS_ENDPOINT=$(aws ssm get-parameter --name "/mautic/shared/rds/endpoint" --query "Parameter.Value" --output text)
+    RDS_ENDPOINT=$(aws ssm get-parameter \
+        --name "/mautic/${AWS_REGION}/shared/rds/endpoint" \
+        --query "Parameter.Value" \
+        --output text)
     MASTER_USER=$(echo $RDS_CREDENTIALS | jq -r '.username')
     MASTER_PASSWORD=$(echo $RDS_CREDENTIALS | jq -r '.password')
 
     # Obter credenciais do cliente
     CLIENT_CREDENTIALS=$(aws secretsmanager get-secret-value \
-        --secret-id "/mautic/${CLIENT}/${ENVIRONMENT}/credentials" \
+        --secret-id "/mautic/${AWS_REGION}/${CLIENT}/${ENVIRONMENT}/credentials" \
         --query 'SecretString' --output text)
     
     DB_PASSWORD=$(echo $CLIENT_CREDENTIALS | jq -r '.db_password')
@@ -43,13 +52,13 @@ EOF
 
     # Salvar informações do banco no SSM
     aws ssm put-parameter \
-        --name "/mautic/${CLIENT}/${ENVIRONMENT}/database/name" \
+        --name "/mautic/${AWS_REGION}/${CLIENT}/${ENVIRONMENT}/database/name" \
         --value "${DB_NAME}" \
         --type "String" \
         --overwrite
 
     aws ssm put-parameter \
-        --name "/mautic/${CLIENT}/${ENVIRONMENT}/database/user" \
+        --name "/mautic/${AWS_REGION}/${CLIENT}/${ENVIRONMENT}/database/user" \
         --value "${DB_USER}" \
         --type "String" \
         --overwrite
