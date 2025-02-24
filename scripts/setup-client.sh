@@ -13,29 +13,29 @@ CLIENT_DIR="terraform/environments/clients/${CLIENT}/${ENVIRONMENT}"
 
 echo "Iniciando setup para ${CLIENT}/${ENVIRONMENT} na região ${AWS_REGION}..."
 
-# Obter informações da infra compartilhada
-echo "Obtendo informações da infraestrutura compartilhada..."
+# Obter informações da infra compartilhada da região específica
+echo "Obtendo informações da infraestrutura compartilhada na região ${AWS_REGION}..."
 
 # VPC e Subnets
 VPC_ID=$(aws ssm get-parameter \
-  --name "/mautic/shared/vpc/id" \
+  --name "/mautic/${AWS_REGION}/shared/vpc/id" \
   --query "Parameter.Value" \
   --output text)
 
 SUBNET_IDS=$(aws ssm get-parameter \
-  --name "/mautic/shared/vpc/subnet_ids" \
+  --name "/mautic/${AWS_REGION}/shared/vpc/subnet_ids" \
   --query "Parameter.Value" \
   --output text)
 
 # RDS Endpoint
 RDS_ENDPOINT=$(aws ssm get-parameter \
-  --name "/mautic/shared/rds/endpoint" \
+  --name "/mautic/${AWS_REGION}/shared/rds/endpoint" \
   --query "Parameter.Value" \
   --output text)
 
 # Credenciais RDS Master
 RDS_MASTER_SECRET=$(aws secretsmanager get-secret-value \
-  --secret-id "/mautic/shared/rds/master" \
+  --secret-id "/mautic/${AWS_REGION}/shared/rds/master" \
   --query 'SecretString' \
   --output text)
 
