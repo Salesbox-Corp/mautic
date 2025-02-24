@@ -2,8 +2,10 @@
 
 # Verificar argumentos
 AWS_REGION=${1:-"us-east-2"}  # Região padrão se não especificada
+FORCE_DELETE_STATE=${FORCE_DELETE_STATE:-"false"}  # Controle via variável de ambiente
 
 echo "Iniciando setup da infraestrutura base na região ${AWS_REGION}..."
+echo "Forçar deleção do estado: ${FORCE_DELETE_STATE}"
 
 # Obter ID da conta AWS
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
@@ -67,6 +69,13 @@ aws dynamodb create-table \
 
 aws dynamodb wait table-exists --table-name ${DYNAMODB_TABLE}
 
+# Adicionar comando para limpar o digest do DynamoDB
+aws dynamodb update-item \
+    --table-name mautic-terraform-state-lock \
+    --key '{"LockID": {"S": "base/terraform.tfstate"}}' \
+    --update-expression "REMOVE Digest" \
+    --region us-east-1  # Ajuste a região conforme necessário
+
 # 3. Remover diretório .terraform e arquivos de state locais
 echo "Limpando arquivos locais..."
 cd terraform/base
@@ -74,6 +83,26 @@ rm -rf .terraform*
 rm -f terraform.tfstate*
 
 echo "Iniciando setup da infraestrutura base..."
+
+# Antes de iniciar o Terraform, verificar se deve forçar deleção do estado
+if [ "${FORCE_DELETE_STATE}" = "true" ]; then
+    echo "Forçando deleção do estado atual..."
+    aws s3 rm "s3://${BUCKET_NAME}/base/${AWS_REGION}/terraform.tfstate" || true
+    aws s3 rm "s3://${BUCKET_NAME}/base/terraform.tfstate" || true
+
+    # Limpar qualquer lock que possa existir
+    aws dynamodb delete-item \
+        --table-name ${DYNAMODB_TABLE} \
+        --key '{"LockID": {"S": "base/terraform.tfstate"}}' \
+        --region us-east-1 || true
+
+    aws dynamodb delete-item \
+        --table-name ${DYNAMODB_TABLE} \
+        --key "{\"LockID\": {\"S\": \"base/${AWS_REGION}/terraform.tfstate\"}}" \
+        --region us-east-1 || true
+else
+    echo "Mantendo estado atual..."
+fi
 
 # Inicializar Terraform com backend configuration
 terraform init \

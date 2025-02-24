@@ -111,4 +111,11 @@ cp terraform/templates/client-minimal/main.tf "${CLIENT_DIR}/"
 cp terraform/templates/client-minimal/variables.tf "${CLIENT_DIR}/"
 cp terraform/templates/client-minimal/backend.tf "${CLIENT_DIR}/"
 
+# Fazer backup do estado atual
+aws s3 cp s3://mautic-terraform-state-***/base/terraform.tfstate \
+    s3://mautic-terraform-state-***/base/terraform.tfstate.backup
+
+# Remover o estado atual
+aws s3 rm s3://mautic-terraform-state-***/base/terraform.tfstate
+
 echo "Setup concluído para ${CLIENT}/${ENVIRONMENT}" 
