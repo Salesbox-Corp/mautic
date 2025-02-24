@@ -10,6 +10,7 @@ if [ -z "$CLIENT" ] || [ -z "$ENVIRONMENT" ]; then
 fi
 
 CLIENT_DIR="terraform/environments/clients/${CLIENT}/${ENVIRONMENT}"
+STATE_KEY="regions/${AWS_REGION}/clients/${CLIENT}/${ENVIRONMENT}/terraform.tfstate"
 
 echo "Iniciando setup para ${CLIENT}/${ENVIRONMENT} na região ${AWS_REGION}..."
 
@@ -117,5 +118,13 @@ aws s3 cp s3://mautic-terraform-state-***/base/terraform.tfstate \
 
 # Remover o estado atual
 aws s3 rm s3://mautic-terraform-state-***/base/terraform.tfstate
+
+# Inicializar Terraform com backend configuration
+cd "${CLIENT_DIR}"
+terraform init \
+    -backend-config="bucket=${BUCKET_NAME}" \
+    -backend-config="key=${STATE_KEY}" \
+    -backend-config="region=us-east-1" \
+    -backend-config="dynamodb_table=mautic-terraform-lock"
 
 echo "Setup concluído para ${CLIENT}/${ENVIRONMENT}" 

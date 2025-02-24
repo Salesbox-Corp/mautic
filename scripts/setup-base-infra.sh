@@ -11,20 +11,46 @@ echo "Forçar deleção do estado: ${FORCE_DELETE_STATE}"
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
 DYNAMODB_TABLE="mautic-terraform-lock"
+STATE_KEY="regions/${AWS_REGION}/terraform.tfstate"
+LOCK_ID="regions/${AWS_REGION}/terraform.tfstate"
 
 echo "Recriando infraestrutura do backend..."
 
-# 1. Deletar e recriar bucket
-echo "Recriando bucket S3..."
+# 1. Criar bucket se não existir (sempre em us-east-1)
+echo "Verificando/criando bucket S3..."
+if ! aws s3api head-bucket --bucket ${BUCKET_NAME} 2>/dev/null; then
+    # Criar bucket sempre em us-east-1
+    aws s3api create-bucket \
+        --bucket ${BUCKET_NAME} \
+        --region us-east-1
 
-# Tentar remover objetos e versões de todos os caminhos possíveis
-for KEY in "base/terraform.tfstate" "base/${AWS_REGION}/terraform.tfstate"; do
-    echo "Limpando objetos do caminho: ${KEY}"
+    # Habilitar versionamento
+    aws s3api put-bucket-versioning \
+        --bucket ${BUCKET_NAME} \
+        --versioning-configuration Status=Enabled
+fi
+
+# 2. Criar tabela DynamoDB se não existir (sempre em us-east-1)
+echo "Verificando/criando tabela DynamoDB..."
+if ! aws dynamodb describe-table --table-name ${DYNAMODB_TABLE} --region us-east-1 2>/dev/null; then
+    aws dynamodb create-table \
+        --table-name ${DYNAMODB_TABLE} \
+        --attribute-definitions AttributeName=LockID,AttributeType=S \
+        --key-schema AttributeName=LockID,KeyType=HASH \
+        --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+        --region us-east-1
+
+    aws dynamodb wait table-exists --table-name ${DYNAMODB_TABLE} --region us-east-1
+fi
+
+# 3. Se forçar deleção do estado, limpar apenas o estado da região específica
+if [ "${FORCE_DELETE_STATE}" = "true" ]; then
+    echo "Forçando deleção do estado atual da região ${AWS_REGION}..."
     
-    # Remover todas as versões dos objetos
+    # Remover todas as versões do estado da região
     aws s3api list-object-versions \
         --bucket ${BUCKET_NAME} \
-        --prefix ${KEY} \
+        --prefix ${STATE_KEY} \
         --output json \
         --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' | \
         aws s3api delete-objects \
@@ -34,49 +60,21 @@ for KEY in "base/terraform.tfstate" "base/${AWS_REGION}/terraform.tfstate"; do
     # Remover marcadores de deleção
     aws s3api list-object-versions \
         --bucket ${BUCKET_NAME} \
-        --prefix ${KEY} \
+        --prefix ${STATE_KEY} \
         --output json \
         --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' | \
         aws s3api delete-objects \
             --bucket ${BUCKET_NAME} \
             --delete "$(cat -)" || true
-done
 
-# Agora podemos deletar o bucket
-aws s3 rb "s3://${BUCKET_NAME}" --force || true
+    # Limpar lock específico da região
+    aws dynamodb delete-item \
+        --table-name ${DYNAMODB_TABLE} \
+        --key "{\"LockID\": {\"S\": \"${LOCK_ID}\"}}" \
+        --region us-east-1 || true
+fi
 
-# Recriar o bucket
-aws s3api create-bucket \
-    --bucket ${BUCKET_NAME} \
-    --region us-east-1
-
-# Habilitar versionamento
-aws s3api put-bucket-versioning \
-    --bucket ${BUCKET_NAME} \
-    --versioning-configuration Status=Enabled
-
-# 2. Deletar e recriar tabela DynamoDB
-echo "Recriando tabela DynamoDB..."
-aws dynamodb delete-table --table-name ${DYNAMODB_TABLE} || true
-aws dynamodb wait table-not-exists --table-name ${DYNAMODB_TABLE}
-
-aws dynamodb create-table \
-    --table-name ${DYNAMODB_TABLE} \
-    --attribute-definitions AttributeName=LockID,AttributeType=S \
-    --key-schema AttributeName=LockID,KeyType=HASH \
-    --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
-    --region us-east-1
-
-aws dynamodb wait table-exists --table-name ${DYNAMODB_TABLE}
-
-# Adicionar comando para limpar o digest do DynamoDB
-aws dynamodb update-item \
-    --table-name mautic-terraform-state-lock \
-    --key '{"LockID": {"S": "base/terraform.tfstate"}}' \
-    --update-expression "REMOVE Digest" \
-    --region us-east-1  # Ajuste a região conforme necessário
-
-# 3. Remover diretório .terraform e arquivos de state locais
+# 4. Remover diretório .terraform e arquivos de state locais
 echo "Limpando arquivos locais..."
 cd terraform/base
 rm -rf .terraform*
@@ -84,30 +82,12 @@ rm -f terraform.tfstate*
 
 echo "Iniciando setup da infraestrutura base..."
 
-# Antes de iniciar o Terraform, verificar se deve forçar deleção do estado
-if [ "${FORCE_DELETE_STATE}" = "true" ]; then
-    echo "Forçando deleção do estado atual..."
-    aws s3 rm "s3://${BUCKET_NAME}/base/${AWS_REGION}/terraform.tfstate" || true
-    aws s3 rm "s3://${BUCKET_NAME}/base/terraform.tfstate" || true
-
-    # Limpar qualquer lock que possa existir
-    aws dynamodb delete-item \
-        --table-name ${DYNAMODB_TABLE} \
-        --key '{"LockID": {"S": "base/terraform.tfstate"}}' \
-        --region us-east-1 || true
-
-    aws dynamodb delete-item \
-        --table-name ${DYNAMODB_TABLE} \
-        --key "{\"LockID\": {\"S\": \"base/${AWS_REGION}/terraform.tfstate\"}}" \
-        --region us-east-1 || true
-else
-    echo "Mantendo estado atual..."
-fi
-
 # Inicializar Terraform com backend configuration
 terraform init \
     -backend-config="bucket=${BUCKET_NAME}" \
-    -backend-config="key=base/${AWS_REGION}/terraform.tfstate" \
+    -backend-config="key=${STATE_KEY}" \
+    -backend-config="region=us-east-1" \
+    -backend-config="dynamodb_table=${DYNAMODB_TABLE}" \
     -force-copy
 
 # Aplicar configuração com a região especificada
