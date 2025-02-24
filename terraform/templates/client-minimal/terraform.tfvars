@@ -8,8 +8,6 @@ aws_region  = "us-east-1"
 # availability_zones  = ["us-east-1a", "us-east-1b"]
 # public_subnet_cidrs = ["172.31.128.0/25", "172.31.128.128/25"]
 
-db_instance_class = "db.t3.small"
-
 task_cpu    = 1024
 task_memory = 2048
 

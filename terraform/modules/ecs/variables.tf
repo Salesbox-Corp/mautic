@@ -149,4 +149,19 @@ variable "environment_variables" {
   description = "Variáveis de ambiente para o container"
   type        = map(string)
   default     = {}
+}
+
+variable "db_host" {
+  description = "Host do banco de dados"
+  type        = string
+}
+
+variable "db_name" {
+  description = "Nome do banco de dados"
+  type        = string
+}
+
+variable "db_username" {
+  description = "Usuário do banco de dados"
+  type        = string
 } 

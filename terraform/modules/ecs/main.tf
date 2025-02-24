@@ -73,36 +73,39 @@ resource "aws_ecs_task_definition" "mautic" {
         }
       ]
 
-      environment = [
-        {
-          name  = "MAUTIC_DB_HOST"
-          value = var.db_host
-        },
-        {
-          name  = "MAUTIC_DB_NAME"
-          value = var.db_name
-        },
-        {
-          name  = "MAUTIC_DB_USER"
-          value = var.db_username
-        },
-        {
-          name  = "MAUTIC_DB_PASSWORD"
-          value = local.credentials["db_password"]
-        },
-        {
-          name  = "MAUTIC_ADMIN_USERNAME"
-          value = local.credentials["mautic_admin_user"]
-        },
-        {
-          name  = "MAUTIC_ADMIN_PASSWORD"
-          value = local.credentials["mautic_admin_password"]
-        },
-        {
-          name  = "MAUTIC_ADMIN_EMAIL"
-          value = local.credentials["mautic_admin_email"]
-        }
-      ]
+      environment = concat(
+        [
+          {
+            name  = "MAUTIC_DB_HOST"
+            value = var.db_host
+          },
+          {
+            name  = "MAUTIC_DB_NAME"
+            value = var.db_name
+          },
+          {
+            name  = "MAUTIC_DB_USER"
+            value = var.db_username
+          },
+          {
+            name  = "MAUTIC_DB_PASSWORD"
+            value = local.credentials["db_password"]
+          },
+          {
+            name  = "MAUTIC_ADMIN_USERNAME"
+            value = local.credentials["mautic_admin_user"]
+          },
+          {
+            name  = "MAUTIC_ADMIN_PASSWORD"
+            value = local.credentials["mautic_admin_password"]
+          },
+          {
+            name  = "MAUTIC_ADMIN_EMAIL"
+            value = local.credentials["mautic_admin_email"]
+          }
+        ],
+        var.container_environment
+      )
 
       portMappings = [
         {
