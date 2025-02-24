@@ -10,23 +10,27 @@ resource "aws_ecs_cluster" "main" {
     name  = "containerInsights"
     value = "enabled"
   }
+}
 
-  # Habilitar Capacity Providers
+resource "aws_ecs_cluster_capacity_providers" "main" {
+  cluster_name = aws_ecs_cluster.main.name
+
   capacity_providers = ["FARGATE", "FARGATE_SPOT"]
+
   default_capacity_provider_strategy {
-    capacity_provider = "FARGATE_SPOT"  # Usar Spot por padrão
+    capacity_provider = "FARGATE_SPOT"
     weight = 1
     base   = 0
   }
 }
 
-# Buscar credenciais do Secrets Manager
-data "aws_secretsmanager_secret" "mautic_credentials" {
+# Buscar credenciais do banco
+data "aws_secretsmanager_secret" "db_credentials" {
   name = "/mautic/${var.client}/${var.environment}/credentials"
 }
 
-data "aws_secretsmanager_secret_version" "current" {
-  secret_id = data.aws_secretsmanager_secret.mautic_credentials.id
+data "aws_secretsmanager_secret_version" "db_credentials" {
+  secret_id = data.aws_secretsmanager_secret.db_credentials.id
 }
 
 locals {
@@ -84,7 +88,7 @@ resource "aws_ecs_task_definition" "mautic" {
         },
         {
           name  = "MAUTIC_DB_PASSWORD"
-          value = data.aws_secretsmanager_secret_version.db_credentials.secret_string
+          value = jsondecode(data.aws_secretsmanager_secret_version.db_credentials.secret_string)["db_password"]
         },
         {
           name  = "MAUTIC_ADMIN_USERNAME"

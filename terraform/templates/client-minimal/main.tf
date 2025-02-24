@@ -78,4 +78,37 @@ module "ecs" {
 # Buscar senha do banco do SSM
 data "aws_ssm_parameter" "db_password" {
   name = "/mautic/${var.client}/${var.environment}/db/password"
-} 
+}
+
+# Adicionar políticas necessárias ao execution role
+resource "aws_iam_role_policy_attachment" "ecs_execution" {
+  role       = aws_iam_role.ecs_execution.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+# Política para acessar Secrets Manager
+resource "aws_iam_role_policy" "ecs_task_secrets" {
+  name = "${module.naming.prefix}-ecs-secrets"
+  role = aws_iam_role.ecs_task.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "ssm:GetParameters",
+          "ssm:GetParameter"
+        ]
+        Resource = [
+          "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:/mautic/${var.client}/${var.environment}/*",
+          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/mautic/${var.client}/${var.environment}/*"
+        ]
+      }
+    ]
+  })
+}
+
+# Obter ID da conta AWS
+data "aws_caller_identity" "current" {} 
