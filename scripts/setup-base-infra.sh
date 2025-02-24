@@ -12,33 +12,35 @@ DYNAMODB_TABLE="mautic-terraform-lock"
 
 echo "Limpando states antigos..."
 
-# Limpar state antigo (sem região)
-aws s3 rm "s3://${BUCKET_NAME}/base/terraform.tfstate" || true
-aws dynamodb delete-item \
-    --table-name ${DYNAMODB_TABLE} \
-    --key '{"LockID": {"S": "'${BUCKET_NAME}'/base/terraform.tfstate-md5"}}' || true
-
-# Limpar state com região
-STATE_KEY="base/${AWS_REGION}/terraform.tfstate"
-aws s3 rm "s3://${BUCKET_NAME}/${STATE_KEY}" || true
-aws dynamodb delete-item \
-    --table-name ${DYNAMODB_TABLE} \
-    --key '{"LockID": {"S": "'${BUCKET_NAME}'/'${STATE_KEY}'-md5"}}' || true
-
-# Limpar lock se existir
-aws dynamodb delete-item \
-    --table-name ${DYNAMODB_TABLE} \
-    --key '{"LockID": {"S": "'${BUCKET_NAME}'/base/terraform.tfstate"}}' || true
+# Forçar remoção de todos os states e locks relacionados
+for KEY in "base/terraform.tfstate" "base/${AWS_REGION}/terraform.tfstate"; do
+    echo "Limpando state: ${KEY}"
+    
+    # Remover state do S3
+    aws s3 rm "s3://${BUCKET_NAME}/${KEY}" || true
+    
+    # Remover entradas do DynamoDB
+    aws dynamodb delete-item \
+        --table-name ${DYNAMODB_TABLE} \
+        --key '{"LockID": {"S": "'${BUCKET_NAME}'/'${KEY}'"}}' || true
+    
+    aws dynamodb delete-item \
+        --table-name ${DYNAMODB_TABLE} \
+        --key '{"LockID": {"S": "'${BUCKET_NAME}'/'${KEY}'-md5"}}' || true
+done
 
 echo "Iniciando setup da infraestrutura base..."
 
 # Navegar para o diretório correto
 cd terraform/base
 
+# Remover diretório .terraform se existir
+rm -rf .terraform
+
 # Inicializar Terraform com backend configuration
 terraform init \
     -backend-config="bucket=${BUCKET_NAME}" \
-    -backend-config="key=${STATE_KEY}" \
+    -backend-config="key=base/${AWS_REGION}/terraform.tfstate" \
     -force-copy
 
 # Aplicar configuração com a região especificada
