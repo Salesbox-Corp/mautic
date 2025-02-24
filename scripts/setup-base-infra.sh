@@ -10,18 +10,25 @@ AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
 DYNAMODB_TABLE="mautic-terraform-lock"
 
-# O state key agora inclui a região
+echo "Limpando states antigos..."
+
+# Limpar state antigo (sem região)
+aws s3 rm "s3://${BUCKET_NAME}/base/terraform.tfstate" || true
+aws dynamodb delete-item \
+    --table-name ${DYNAMODB_TABLE} \
+    --key '{"LockID": {"S": "'${BUCKET_NAME}'/base/terraform.tfstate-md5"}}' || true
+
+# Limpar state com região
 STATE_KEY="base/${AWS_REGION}/terraform.tfstate"
-
-echo "Limpando state anterior se existir..."
-
-# Remover state do S3 se existir
 aws s3 rm "s3://${BUCKET_NAME}/${STATE_KEY}" || true
-
-# Remover entrada do DynamoDB
 aws dynamodb delete-item \
     --table-name ${DYNAMODB_TABLE} \
     --key '{"LockID": {"S": "'${BUCKET_NAME}'/'${STATE_KEY}'-md5"}}' || true
+
+# Limpar lock se existir
+aws dynamodb delete-item \
+    --table-name ${DYNAMODB_TABLE} \
+    --key '{"LockID": {"S": "'${BUCKET_NAME}'/base/terraform.tfstate"}}' || true
 
 echo "Iniciando setup da infraestrutura base..."
 
