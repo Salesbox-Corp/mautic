@@ -14,23 +14,31 @@ echo "Recriando infraestrutura do backend..."
 
 # 1. Deletar e recriar bucket
 echo "Recriando bucket S3..."
-# Primeiro remover todas as versões dos objetos
-aws s3api list-object-versions \
-    --bucket ${BUCKET_NAME} \
-    --output json \
-    --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' | \
-    aws s3api delete-objects \
-        --bucket ${BUCKET_NAME} \
-        --delete "$(cat -)" || true
 
-# Remover marcadores de deleção
-aws s3api list-object-versions \
-    --bucket ${BUCKET_NAME} \
-    --output json \
-    --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' | \
-    aws s3api delete-objects \
+# Tentar remover objetos e versões de todos os caminhos possíveis
+for KEY in "base/terraform.tfstate" "base/${AWS_REGION}/terraform.tfstate"; do
+    echo "Limpando objetos do caminho: ${KEY}"
+    
+    # Remover todas as versões dos objetos
+    aws s3api list-object-versions \
         --bucket ${BUCKET_NAME} \
-        --delete "$(cat -)" || true
+        --prefix ${KEY} \
+        --output json \
+        --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' | \
+        aws s3api delete-objects \
+            --bucket ${BUCKET_NAME} \
+            --delete "$(cat -)" || true
+
+    # Remover marcadores de deleção
+    aws s3api list-object-versions \
+        --bucket ${BUCKET_NAME} \
+        --prefix ${KEY} \
+        --output json \
+        --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' | \
+        aws s3api delete-objects \
+            --bucket ${BUCKET_NAME} \
+            --delete "$(cat -)" || true
+done
 
 # Agora podemos deletar o bucket
 aws s3 rb "s3://${BUCKET_NAME}" --force || true
@@ -38,8 +46,7 @@ aws s3 rb "s3://${BUCKET_NAME}" --force || true
 # Recriar o bucket
 aws s3api create-bucket \
     --bucket ${BUCKET_NAME} \
-    --region us-east-1 \
-    --create-bucket-configuration LocationConstraint=us-east-1
+    --region us-east-1
 
 # Habilitar versionamento
 aws s3api put-bucket-versioning \
