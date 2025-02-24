@@ -6,7 +6,15 @@ provider "aws" {
 # VPC Compartilhada
 module "shared_vpc" {
   source = "../modules/shared_vpc"
+  
   aws_region = var.aws_region
+  create_vpc = true  # Forçar criação de nova VPC
+  
+  tags = {
+    Environment = "shared"
+    Project     = "mautic"
+    ManagedBy   = "terraform"
+  }
 }
 
 # RDS Compartilhado
