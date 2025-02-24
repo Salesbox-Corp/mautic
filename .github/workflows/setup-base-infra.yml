@@ -4,10 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       aws_region:
-        description: 'AWS Region'
+        description: 'AWS Region para recursos (não alterar sem motivo)'
         required: true
         default: 'us-east-2'
-        type: string
+        type: choice
+        options:
+          - 'us-east-2'  # Ohio (recomendado)
+          - 'us-east-1'  # Virginia
+          - 'us-west-2'  # Oregon
       force_delete_state:
         description: 'Forçar deleção do estado do Terraform'
         required: true
@@ -61,6 +65,8 @@ jobs:
         env:
           FORCE_DELETE_STATE: ${{ github.event.inputs.force_delete_state }}
         run: |
+          # Adicionar permissão de execução ao script
+          chmod +x ./scripts/setup-base-infra.sh
           ./scripts/setup-base-infra.sh ${{ env.AWS_REGION }}
 
       - name: Verify Base Infrastructure
@@ -95,4 +101,6 @@ jobs:
 
       - name: Cleanup Failed Infrastructure
         run: |
+          # Adicionar permissão de execução ao script
+          chmod +x ./scripts/setup-base-infra.sh
           ./scripts/setup-base-infra.sh ${{ env.AWS_REGION }} 
