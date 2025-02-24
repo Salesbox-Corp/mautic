@@ -34,7 +34,7 @@ data "aws_secretsmanager_secret_version" "db_credentials" {
 }
 
 locals {
-  credentials = jsondecode(data.aws_secretsmanager_secret_version.current.secret_string)
+  credentials = jsondecode(data.aws_secretsmanager_secret_version.db_credentials.secret_string)
 }
 
 resource "aws_ecs_task_definition" "mautic" {
@@ -88,19 +88,19 @@ resource "aws_ecs_task_definition" "mautic" {
         },
         {
           name  = "MAUTIC_DB_PASSWORD"
-          value = jsondecode(data.aws_secretsmanager_secret_version.db_credentials.secret_string)["db_password"]
+          value = local.credentials["db_password"]
         },
         {
           name  = "MAUTIC_ADMIN_USERNAME"
-          value = local.credentials.mautic_admin_user
+          value = local.credentials["mautic_admin_user"]
         },
         {
           name  = "MAUTIC_ADMIN_PASSWORD"
-          value = local.credentials.mautic_admin_password
+          value = local.credentials["mautic_admin_password"]
         },
         {
           name  = "MAUTIC_ADMIN_EMAIL"
-          value = local.credentials.mautic_admin_email
+          value = local.credentials["mautic_admin_email"]
         }
       ]
 
