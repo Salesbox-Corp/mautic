@@ -10,24 +10,55 @@ AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
 DYNAMODB_TABLE="mautic-terraform-lock"
 
-echo "Realizando limpeza completa do state..."
+echo "Recriando infraestrutura do backend..."
 
-# 1. Limpar TODOS os objetos do bucket
-echo "Limpando bucket S3..."
-aws s3 rm "s3://${BUCKET_NAME}" --recursive
+# 1. Deletar e recriar bucket
+echo "Recriando bucket S3..."
+# Primeiro remover todas as versões dos objetos
+aws s3api list-object-versions \
+    --bucket ${BUCKET_NAME} \
+    --output json \
+    --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' | \
+    aws s3api delete-objects \
+        --bucket ${BUCKET_NAME} \
+        --delete "$(cat -)" || true
 
-# 2. Limpar TODAS as entradas da tabela DynamoDB
-echo "Limpando tabela DynamoDB..."
-aws dynamodb scan \
+# Remover marcadores de deleção
+aws s3api list-object-versions \
+    --bucket ${BUCKET_NAME} \
+    --output json \
+    --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' | \
+    aws s3api delete-objects \
+        --bucket ${BUCKET_NAME} \
+        --delete "$(cat -)" || true
+
+# Agora podemos deletar o bucket
+aws s3 rb "s3://${BUCKET_NAME}" --force || true
+
+# Recriar o bucket
+aws s3api create-bucket \
+    --bucket ${BUCKET_NAME} \
+    --region us-east-1 \
+    --create-bucket-configuration LocationConstraint=us-east-1
+
+# Habilitar versionamento
+aws s3api put-bucket-versioning \
+    --bucket ${BUCKET_NAME} \
+    --versioning-configuration Status=Enabled
+
+# 2. Deletar e recriar tabela DynamoDB
+echo "Recriando tabela DynamoDB..."
+aws dynamodb delete-table --table-name ${DYNAMODB_TABLE} || true
+aws dynamodb wait table-not-exists --table-name ${DYNAMODB_TABLE}
+
+aws dynamodb create-table \
     --table-name ${DYNAMODB_TABLE} \
-    --attributes-to-get "LockID" \
-    --query "Items[].LockID.S" \
-    --output text | \
-while read -r lockid; do
-    aws dynamodb delete-item \
-        --table-name ${DYNAMODB_TABLE} \
-        --key "{\"LockID\": {\"S\": \"$lockid\"}}"
-done
+    --attribute-definitions AttributeName=LockID,AttributeType=S \
+    --key-schema AttributeName=LockID,KeyType=HASH \
+    --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+    --region us-east-1
+
+aws dynamodb wait table-exists --table-name ${DYNAMODB_TABLE}
 
 # 3. Remover diretório .terraform e arquivos de state locais
 echo "Limpando arquivos locais..."
