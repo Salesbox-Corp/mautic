@@ -55,7 +55,6 @@ resource "aws_ecs_task_definition" "mautic" {
       transit_encryption_port = 2049
       authorization_config {
         access_point_id = aws_efs_access_point.mautic.id
-        iam_auth        = "ENABLED"
       }
     }
   }

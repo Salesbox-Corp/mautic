@@ -61,7 +61,8 @@ DB_USER="${DB_NAME}_user"
 # Criar banco de dados do cliente
 mysql -h "${RDS_ENDPOINT}" \
   -u "$(echo ${RDS_CREDENTIALS} | jq -r '.username')" \
-  -p"$(echo ${RDS_CREDENTIALS} | jq -r '.password')" <<EOF
+  -p"$(echo ${RDS_CREDENTIALS} | jq -r '.password')" \
+  --protocol=TCP <<EOF
 CREATE DATABASE IF NOT EXISTS ${DB_NAME};
 CREATE USER IF NOT EXISTS '${DB_USER}'@'%' IDENTIFIED BY '${DB_PASSWORD}';
 GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'%';
