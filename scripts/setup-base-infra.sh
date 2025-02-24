@@ -10,32 +10,32 @@ AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
 DYNAMODB_TABLE="mautic-terraform-lock"
 
-echo "Limpando states antigos..."
+echo "Realizando limpeza completa do state..."
 
-# Forçar remoção de todos os states e locks relacionados
-for KEY in "base/terraform.tfstate" "base/${AWS_REGION}/terraform.tfstate"; do
-    echo "Limpando state: ${KEY}"
-    
-    # Remover state do S3
-    aws s3 rm "s3://${BUCKET_NAME}/${KEY}" || true
-    
-    # Remover entradas do DynamoDB
+# 1. Limpar TODOS os objetos do bucket
+echo "Limpando bucket S3..."
+aws s3 rm "s3://${BUCKET_NAME}" --recursive
+
+# 2. Limpar TODAS as entradas da tabela DynamoDB
+echo "Limpando tabela DynamoDB..."
+aws dynamodb scan \
+    --table-name ${DYNAMODB_TABLE} \
+    --attributes-to-get "LockID" \
+    --query "Items[].LockID.S" \
+    --output text | \
+while read -r lockid; do
     aws dynamodb delete-item \
         --table-name ${DYNAMODB_TABLE} \
-        --key '{"LockID": {"S": "'${BUCKET_NAME}'/'${KEY}'"}}' || true
-    
-    aws dynamodb delete-item \
-        --table-name ${DYNAMODB_TABLE} \
-        --key '{"LockID": {"S": "'${BUCKET_NAME}'/'${KEY}'-md5"}}' || true
+        --key "{\"LockID\": {\"S\": \"$lockid\"}}"
 done
 
-echo "Iniciando setup da infraestrutura base..."
-
-# Navegar para o diretório correto
+# 3. Remover diretório .terraform e arquivos de state locais
+echo "Limpando arquivos locais..."
 cd terraform/base
+rm -rf .terraform*
+rm -f terraform.tfstate*
 
-# Remover diretório .terraform se existir
-rm -rf .terraform
+echo "Iniciando setup da infraestrutura base..."
 
 # Inicializar Terraform com backend configuration
 terraform init \
