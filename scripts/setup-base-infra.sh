@@ -47,31 +47,37 @@ fi
 if [ "${FORCE_DELETE_STATE}" = "true" ]; then
     echo "Forçando deleção do estado atual da região ${AWS_REGION}..."
     
-    # Remover todas as versões do estado da região
-    aws s3api list-object-versions \
-        --bucket ${BUCKET_NAME} \
-        --prefix ${STATE_KEY} \
-        --output json \
-        --query '{Objects: Versions[].{Key:Key,VersionId:VersionId}}' | \
-        aws s3api delete-objects \
-            --bucket ${BUCKET_NAME} \
-            --delete "$(cat -)" || true
-
-    # Remover marcadores de deleção
-    aws s3api list-object-versions \
-        --bucket ${BUCKET_NAME} \
-        --prefix ${STATE_KEY} \
-        --output json \
-        --query '{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' | \
-        aws s3api delete-objects \
-            --bucket ${BUCKET_NAME} \
-            --delete "$(cat -)" || true
-
-    # Limpar lock específico da região
+    # Primeiro, remover qualquer lock existente
+    echo "Removendo locks existentes..."
     aws dynamodb delete-item \
         --table-name ${DYNAMODB_TABLE} \
         --key "{\"LockID\": {\"S\": \"${LOCK_ID}\"}}" \
         --region us-east-1 || true
+
+    # Remover todas as versões do estado da região
+    echo "Removendo versões do estado..."
+    VERSIONS=$(aws s3api list-object-versions \
+        --bucket ${BUCKET_NAME} \
+        --prefix ${STATE_KEY} \
+        --output json)
+
+    # Deletar versões se existirem
+    VERSIONS_TO_DELETE=$(echo $VERSIONS | jq -r '.Versions')
+    if [ "$VERSIONS_TO_DELETE" != "null" ]; then
+        echo $VERSIONS | jq -r '{Objects: [.Versions[] | {Key:.Key, VersionId:.VersionId}]}' | \
+        aws s3api delete-objects \
+            --bucket ${BUCKET_NAME} \
+            --delete "$(cat -)" || true
+    fi
+
+    # Deletar marcadores de deleção se existirem
+    DELETE_MARKERS=$(echo $VERSIONS | jq -r '.DeleteMarkers')
+    if [ "$DELETE_MARKERS" != "null" ]; then
+        echo $VERSIONS | jq -r '{Objects: [.DeleteMarkers[] | {Key:.Key, VersionId:.VersionId}]}' | \
+        aws s3api delete-objects \
+            --bucket ${BUCKET_NAME} \
+            --delete "$(cat -)" || true
+    fi
 fi
 
 # 4. Remover diretório .terraform e arquivos de state locais
@@ -82,17 +88,29 @@ rm -f terraform.tfstate*
 
 echo "Iniciando setup da infraestrutura base..."
 
-# Inicializar Terraform com backend configuration
-terraform init \
-    -backend-config="bucket=${BUCKET_NAME}" \
-    -backend-config="key=${STATE_KEY}" \
-    -backend-config="region=us-east-1" \
-    -backend-config="dynamodb_table=${DYNAMODB_TABLE}" \
-    -force-copy
+# Inicializar Terraform com backend configuration e forçar unlock se necessário
+if [ "${FORCE_DELETE_STATE}" = "true" ]; then
+    terraform init \
+        -backend-config="bucket=${BUCKET_NAME}" \
+        -backend-config="key=${STATE_KEY}" \
+        -backend-config="region=us-east-1" \
+        -backend-config="dynamodb_table=${DYNAMODB_TABLE}" \
+        -force-copy
 
-# Aplicar configuração com a região especificada
-terraform apply -auto-approve \
-    -var="aws_region=${AWS_REGION}"
+    terraform apply -auto-approve \
+        -var="aws_region=${AWS_REGION}" \
+        -lock=false  # Desabilitar lock temporariamente
+else
+    terraform init \
+        -backend-config="bucket=${BUCKET_NAME}" \
+        -backend-config="key=${STATE_KEY}" \
+        -backend-config="region=us-east-1" \
+        -backend-config="dynamodb_table=${DYNAMODB_TABLE}" \
+        -force-copy
+
+    terraform apply -auto-approve \
+        -var="aws_region=${AWS_REGION}"
+fi
 
 # Obter outputs importantes
 RDS_ENDPOINT=$(terraform output -raw rds_endpoint)
