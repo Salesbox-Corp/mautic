@@ -11,6 +11,50 @@ module "shared_vpc" {
   aws_region = var.aws_region
 }
 
+# Criar roles do ECS
+resource "aws_iam_role" "ecs_execution" {
+  name = "${module.naming.prefix}-ecs-execution"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role" "ecs_task" {
+  name = "${module.naming.prefix}-ecs-task"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+# Criar repositório ECR
+resource "aws_ecr_repository" "mautic" {
+  name = "mautic-${var.client}-${var.environment}"
+  
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+}
+
 module "ecs" {
   source = "../../../../modules/ecs"
   
@@ -24,12 +68,11 @@ module "ecs" {
   client            = var.client
   environment       = var.environment
   
-  environment_variables = {
-    MAUTIC_DB_HOST     = var.db_host
-    MAUTIC_DB_NAME     = var.db_name
-    MAUTIC_DB_USER     = var.db_username
-    MAUTIC_DB_PASSWORD = data.aws_ssm_parameter.db_password.value
-  }
+  execution_role_arn = aws_iam_role.ecs_execution.arn
+  task_role_arn      = aws_iam_role.ecs_task.arn
+  ecr_repository_url = aws_ecr_repository.mautic.repository_url
+
+  container_environment = []  # Será configurado via SSM/Secrets Manager
 }
 
 # Buscar senha do banco do SSM

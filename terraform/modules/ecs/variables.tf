@@ -16,21 +16,25 @@ variable "task_memory" {
 variable "execution_role_arn" {
   description = "ARN do execution role"
   type        = string
+  default     = null  # Será criado automaticamente se não fornecido
 }
 
 variable "task_role_arn" {
   description = "ARN do task role"
   type        = string
+  default     = null  # Será criado automaticamente se não fornecido
 }
 
 variable "ecr_repository_url" {
   description = "URL do repositório ECR"
   type        = string
+  default     = null  # Será criado automaticamente se não fornecido
 }
 
 variable "container_environment" {
   description = "Variáveis de ambiente para o container"
   type        = list(map(string))
+  default     = []
 }
 
 variable "aws_region" {
@@ -129,4 +133,20 @@ variable "efs_ia_lifecycle_policy" {
   description = "Política de transição para IA (em dias)"
   type        = string
   default     = "AFTER_30_DAYS"
+}
+
+variable "vpc_id" {
+  description = "ID da VPC"
+  type        = string
+}
+
+variable "subnet_ids" {
+  description = "IDs das subnets"
+  type        = list(string)
+}
+
+variable "environment_variables" {
+  description = "Variáveis de ambiente para o container"
+  type        = map(string)
+  default     = {}
 } 
