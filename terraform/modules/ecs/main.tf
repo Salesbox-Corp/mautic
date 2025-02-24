@@ -26,11 +26,13 @@ resource "aws_ecs_cluster_capacity_providers" "main" {
 
 # Buscar credenciais do banco master
 data "aws_secretsmanager_secret" "rds_master" {
-  name = "/mautic/shared/rds/master"
+  name     = "/mautic/shared/rds/master"
+  provider = aws.us-east-1  # Sempre buscar na região us-east-1
 }
 
 data "aws_secretsmanager_secret_version" "rds_master" {
   secret_id = data.aws_secretsmanager_secret.rds_master.id
+  provider  = aws.us-east-1
 }
 
 # Buscar credenciais do cliente

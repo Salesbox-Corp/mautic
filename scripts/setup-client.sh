@@ -49,19 +49,22 @@ RDS_ENDPOINT=$(aws ssm get-parameter \
   --query "Parameter.Value" \
   --output text)
 
-# Obter credenciais do RDS do Secrets Manager
-RDS_CREDENTIALS=$(aws secretsmanager get-secret-value \
+# Obter credenciais do RDS master do Secrets Manager
+RDS_MASTER_SECRET=$(aws secretsmanager get-secret-value \
   --secret-id "/mautic/shared/rds/master" \
   --query 'SecretString' --output text)
+
+MASTER_USER=$(echo $RDS_MASTER_SECRET | jq -r '.username')
+MASTER_PASSWORD=$(echo $RDS_MASTER_SECRET | jq -r '.password')
 
 # Criar banco e usuário para o cliente
 DB_NAME="mautic_${CLIENT}_${ENVIRONMENT}"
 DB_USER="${DB_NAME}_user"
 
-# Criar banco de dados do cliente
+echo "Criando banco de dados ${DB_NAME}..."
 mysql -h "${RDS_ENDPOINT}" \
-  -u "$(echo ${RDS_CREDENTIALS} | jq -r '.username')" \
-  -p"$(echo ${RDS_CREDENTIALS} | jq -r '.password')" \
+  -u "${MASTER_USER}" \
+  -p"${MASTER_PASSWORD}" \
   --protocol=TCP <<EOF
 CREATE DATABASE IF NOT EXISTS ${DB_NAME};
 CREATE USER IF NOT EXISTS '${DB_USER}'@'%' IDENTIFIED BY '${DB_PASSWORD}';

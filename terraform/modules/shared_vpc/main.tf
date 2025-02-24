@@ -1,8 +1,13 @@
 # Buscar VPC existente
 data "aws_vpc" "existing" {
   tags = {
-    Name = "mautic-shared-vpc"
+    Name        = "mautic-shared-vpc"
+    Environment = "shared"
+    Project     = "mautic"
+    ManagedBy   = "terraform"
   }
+
+  state = "available"
 }
 
 # Buscar subnets públicas existentes
@@ -12,8 +17,14 @@ data "aws_subnets" "public" {
     values = [data.aws_vpc.existing.id]
   }
   
-  tags = {
-    Type = "public"
+  filter {
+    name   = "tag:Type"
+    values = ["public"]
+  }
+
+  filter {
+    name   = "tag:Environment"
+    values = ["shared"]
   }
 }
 

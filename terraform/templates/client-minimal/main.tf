@@ -58,6 +58,11 @@ resource "aws_ecr_repository" "mautic" {
 module "ecs" {
   source = "../../../../modules/ecs"
   
+  providers = {
+    aws           = aws
+    aws.us-east-1 = aws.us-east-1
+  }
+
   project_name       = module.naming.prefix
   aws_region        = var.aws_region
   task_cpu          = var.task_cpu
@@ -111,4 +116,10 @@ resource "aws_iam_role_policy" "ecs_task_secrets" {
 }
 
 # Obter ID da conta AWS
-data "aws_caller_identity" "current" {} 
+data "aws_caller_identity" "current" {}
+
+# Adicionar provider alternativo
+provider "aws" {
+  alias  = "us-east-1"
+  region = "us-east-1"
+} 
