@@ -80,11 +80,6 @@ module "ecs" {
   container_environment = []  # Será configurado via SSM/Secrets Manager
 }
 
-# Buscar senha do banco do SSM
-data "aws_ssm_parameter" "db_password" {
-  name = "/mautic/${var.client}/${var.environment}/db/password"
-}
-
 # Adicionar políticas necessárias ao execution role
 resource "aws_iam_role_policy_attachment" "ecs_execution" {
   role       = aws_iam_role.ecs_execution.name

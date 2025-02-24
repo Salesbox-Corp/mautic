@@ -1,51 +1,29 @@
-# Tentar buscar VPC existente
+# Buscar VPC existente
 data "aws_vpc" "existing" {
-  count = 0  # Inicialmente não buscar, vamos criar sempre no primeiro deploy
-
   tags = {
     Name = "mautic-shared-vpc"
   }
 }
 
-# Criar VPC se não existir
-module "vpc" {
-  source = "terraform-aws-modules/vpc/aws"
-
-  name = "mautic-shared-vpc"
-  cidr = "172.31.0.0/16"
-
-  # Usar variável de região para determinar AZs
-  azs = [
-    "${var.aws_region}a",
-    "${var.aws_region}b"
-  ]
-  public_subnets  = ["172.31.1.0/24", "172.31.2.0/24"]
-  
-  enable_nat_gateway = false
-  enable_vpn_gateway = false
-
-  enable_dns_hostnames = true
-  enable_dns_support   = true
-
-  tags = {
-    Name        = "mautic-shared-vpc"
-    Environment = "shared"
-    Project     = "mautic"
-    ManagedBy   = "terraform"
+# Buscar subnets públicas existentes
+data "aws_subnets" "public" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.existing.id]
   }
-
-  public_subnet_tags = {
+  
+  tags = {
     Type = "public"
   }
 }
 
-# Outputs usando a VPC criada
+# Outputs usando a VPC existente
 output "vpc_id" {
-  value = module.vpc.vpc_id
+  value = data.aws_vpc.existing.id
 }
 
 output "public_subnet_ids" {
-  value = module.vpc.public_subnets
+  value = data.aws_subnets.public.ids
 }
 
 variable "aws_region" {

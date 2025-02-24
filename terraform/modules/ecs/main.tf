@@ -24,7 +24,16 @@ resource "aws_ecs_cluster_capacity_providers" "main" {
   }
 }
 
-# Buscar credenciais do banco
+# Buscar credenciais do banco master
+data "aws_secretsmanager_secret" "rds_master" {
+  name = "/mautic/shared/rds/master"
+}
+
+data "aws_secretsmanager_secret_version" "rds_master" {
+  secret_id = data.aws_secretsmanager_secret.rds_master.id
+}
+
+# Buscar credenciais do cliente
 data "aws_secretsmanager_secret" "db_credentials" {
   name = "/mautic/${var.client}/${var.environment}/credentials"
 }
@@ -34,7 +43,8 @@ data "aws_secretsmanager_secret_version" "db_credentials" {
 }
 
 locals {
-  credentials = jsondecode(data.aws_secretsmanager_secret_version.db_credentials.secret_string)
+  master_credentials = jsondecode(data.aws_secretsmanager_secret_version.rds_master.secret_string)
+  client_credentials = jsondecode(data.aws_secretsmanager_secret_version.db_credentials.secret_string)
 }
 
 resource "aws_ecs_task_definition" "mautic" {
@@ -88,19 +98,19 @@ resource "aws_ecs_task_definition" "mautic" {
           },
           {
             name  = "MAUTIC_DB_PASSWORD"
-            value = local.credentials["db_password"]
+            value = local.client_credentials["db_password"]
           },
           {
             name  = "MAUTIC_ADMIN_USERNAME"
-            value = local.credentials["mautic_admin_user"]
+            value = local.client_credentials["mautic_admin_user"]
           },
           {
             name  = "MAUTIC_ADMIN_PASSWORD"
-            value = local.credentials["mautic_admin_password"]
+            value = local.client_credentials["mautic_admin_password"]
           },
           {
             name  = "MAUTIC_ADMIN_EMAIL"
-            value = local.credentials["mautic_admin_email"]
+            value = local.client_credentials["mautic_admin_email"]
           }
         ],
         var.container_environment
