@@ -43,16 +43,27 @@ if ! aws dynamodb describe-table --table-name ${DYNAMODB_TABLE} --region us-east
     aws dynamodb wait table-exists --table-name ${DYNAMODB_TABLE} --region us-east-1
 fi
 
-# 3. Se forçar deleção do estado, limpar apenas o estado da região específica
+# 3. Se forçar deleção do estado, limpar TUDO relacionado ao estado
 if [ "${FORCE_DELETE_STATE}" = "true" ]; then
     echo "Forçando deleção do estado atual da região ${AWS_REGION}..."
     
-    # Primeiro, remover qualquer lock existente
-    echo "Removendo locks existentes..."
-    aws dynamodb delete-item \
+    # Primeiro, remover TODOS os itens da tabela DynamoDB relacionados a esta região
+    echo "Removendo todos os registros do DynamoDB para a região ${AWS_REGION}..."
+    aws dynamodb scan \
         --table-name ${DYNAMODB_TABLE} \
-        --key "{\"LockID\": {\"S\": \"${LOCK_ID}\"}}" \
-        --region us-east-1 || true
+        --region us-east-1 \
+        --projection-expression "LockID" \
+        --filter-expression "contains(LockID, :region)" \
+        --expression-attribute-values '{":region":{"S":"regions/'${AWS_REGION}'"}}' \
+        --query "Items[*].LockID.S" \
+        --output text | while read -r lockid; do
+        if [ ! -z "$lockid" ]; then
+            aws dynamodb delete-item \
+                --table-name ${DYNAMODB_TABLE} \
+                --key "{\"LockID\": {\"S\": \"$lockid\"}}" \
+                --region us-east-1
+        fi
+    done
 
     # Remover todas as versões do estado da região
     echo "Removendo versões do estado..."
@@ -78,6 +89,10 @@ if [ "${FORCE_DELETE_STATE}" = "true" ]; then
             --bucket ${BUCKET_NAME} \
             --delete "$(cat -)" || true
     fi
+
+    # Aguardar um momento para garantir que as deleções foram processadas
+    echo "Aguardando propagação das deleções..."
+    sleep 10
 fi
 
 # 4. Remover diretório .terraform e arquivos de state locais
