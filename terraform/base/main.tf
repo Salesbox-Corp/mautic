@@ -38,27 +38,39 @@ module "shared_rds" {
   }
 }
 
-# Salvar endpoint do RDS no SSM
-resource "aws_ssm_parameter" "rds_endpoint" {
-  name  = "/mautic/shared/rds/endpoint"
-  type  = "String"
-  value = module.shared_rds.endpoint
-}
-
 # Salvar credenciais no Secrets Manager
-resource "aws_secretsmanager_secret" "rds_credentials" {
+resource "aws_secretsmanager_secret" "rds_master" {
   name = "/mautic/shared/rds/master"
 }
 
-resource "aws_secretsmanager_secret_version" "rds_credentials" {
-  secret_id = aws_secretsmanager_secret.rds_credentials.id
+resource "aws_secretsmanager_secret_version" "rds_master" {
+  secret_id = aws_secretsmanager_secret.rds_master.id
   secret_string = jsonencode({
     username = module.shared_rds.username
     password = module.shared_rds.password
   })
 }
 
-# Outputs
+# Salvar informações não sensíveis no SSM
+resource "aws_ssm_parameter" "rds_endpoint" {
+  name  = "/mautic/shared/rds/endpoint"
+  type  = "String"
+  value = module.shared_rds.endpoint
+}
+
+resource "aws_ssm_parameter" "vpc_id" {
+  name  = "/mautic/shared/vpc/id"
+  type  = "String"
+  value = module.shared_vpc.vpc_id
+}
+
+resource "aws_ssm_parameter" "subnet_ids" {
+  name  = "/mautic/shared/vpc/subnet_ids"
+  type  = "StringList"
+  value = join(",", module.shared_vpc.public_subnet_ids)
+}
+
+# Outputs para referência
 output "vpc_id" {
   value = module.shared_vpc.vpc_id
 }
