@@ -68,22 +68,16 @@ GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'%';
 FLUSH PRIVILEGES;
 EOF
 
-# Gerar terraform.tfvars com as configurações
-cat > "${CLIENT_DIR}/terraform.tfvars" <<EOF
-client      = "${CLIENT}"
-environment = "${ENVIRONMENT}"
-project     = "mautic"
-aws_region  = "${AWS_REGION}"
+# Criar diretório do cliente
+mkdir -p "${CLIENT_DIR}"
 
-task_cpu    = 1024
-task_memory = 2048
+# Copiar templates usando envsubst
+export CLIENT ENVIRONMENT AWS_REGION RDS_ENDPOINT DB_NAME DB_USER
+envsubst < terraform/templates/client-minimal/terraform.tfvars > "${CLIENT_DIR}/terraform.tfvars"
 
-db_host     = "${RDS_ENDPOINT}"
-db_name     = "${DB_NAME}"
-db_username = "${DB_USER}"
-EOF
-
-# Copiar templates
-cp -r terraform/templates/client-minimal/* "${CLIENT_DIR}/"
+# Copiar outros arquivos do template
+cp terraform/templates/client-minimal/main.tf "${CLIENT_DIR}/"
+cp terraform/templates/client-minimal/variables.tf "${CLIENT_DIR}/"
+cp terraform/templates/client-minimal/backend.tf "${CLIENT_DIR}/"
 
 echo "Setup concluído para ${CLIENT}/${ENVIRONMENT}" 

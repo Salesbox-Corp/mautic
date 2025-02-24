@@ -72,6 +72,11 @@ module "ecs" {
   task_role_arn      = aws_iam_role.ecs_task.arn
   ecr_repository_url = aws_ecr_repository.mautic.repository_url
 
+  # Adicionar variáveis do banco de dados
+  db_host     = var.db_host
+  db_name     = var.db_name
+  db_username = var.db_username
+
   container_environment = []  # Será configurado via SSM/Secrets Manager
 }
 

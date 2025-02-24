@@ -1,7 +1,7 @@
-client      = "{{CLIENT}}"
-environment = "{{ENVIRONMENT}}"
+client      = "${CLIENT}"
+environment = "${ENVIRONMENT}"
 project     = "mautic"
-aws_region  = "us-east-1"
+aws_region  = "${AWS_REGION}"
 
 # Remover estas variáveis pois agora usamos VPC compartilhada
 # vpc_cidr   = "172.31.128.0/24"
@@ -11,7 +11,7 @@ aws_region  = "us-east-1"
 task_cpu    = 1024
 task_memory = 2048
 
-# Estas variáveis serão preenchidas pelo script setup-client.sh
-db_host     = ""
-db_name     = ""
-db_username = "" 
+# Configurações do banco de dados
+db_host     = "${RDS_ENDPOINT}"
+db_name     = "${DB_NAME}"
+db_username = "${DB_USER}" 
