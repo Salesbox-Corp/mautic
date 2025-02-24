@@ -103,9 +103,4 @@ output "public_subnet_ids" {
 
 output "private_subnet_ids" {
   value = var.create_vpc ? module.vpc[0].private_subnets : data.aws_subnets.private[0].ids
-}
-
-variable "aws_region" {
-  description = "AWS Region"
-  type        = string
 } 
