@@ -13,37 +13,15 @@ DYNAMODB_TABLE="mautic-terraform-lock"
 # O state key agora inclui a região
 STATE_KEY="base/${AWS_REGION}/terraform.tfstate"
 
-echo "Verificando/corrigindo estado do backend..."
+echo "Limpando state anterior se existir..."
 
-# Verificar se há inconsistência no state
-if aws s3api head-object --bucket ${BUCKET_NAME} --key ${STATE_KEY} 2>/dev/null; then
-    echo "State encontrado, verificando consistência..."
-    
-    # Calcular checksum do state atual
-    TEMP_STATE=$(mktemp)
-    aws s3 cp s3://${BUCKET_NAME}/${STATE_KEY} ${TEMP_STATE}
-    CALCULATED_CHECKSUM=$(md5sum ${TEMP_STATE} | cut -d' ' -f1)
-    
-    # Obter checksum armazenado
-    STORED_CHECKSUM=$(aws dynamodb get-item \
-        --table-name ${DYNAMODB_TABLE} \
-        --key '{"LockID": {"S": "'${BUCKET_NAME}'/'${STATE_KEY}'-md5"}}' \
-        --query 'Item.Digest.S' \
-        --output text)
-    
-    if [ "$CALCULATED_CHECKSUM" != "$STORED_CHECKSUM" ]; then
-        echo "Inconsistência detectada, corrigindo..."
-        
-        # Atualizar checksum no DynamoDB
-        aws dynamodb update-item \
-            --table-name ${DYNAMODB_TABLE} \
-            --key '{"LockID": {"S": "'${BUCKET_NAME}'/'${STATE_KEY}'-md5"}}' \
-            --update-expression "SET Digest = :digest" \
-            --expression-attribute-values '{":digest": {"S": "'${CALCULATED_CHECKSUM}'"}}'
-    fi
-    
-    rm ${TEMP_STATE}
-fi
+# Remover state do S3 se existir
+aws s3 rm "s3://${BUCKET_NAME}/${STATE_KEY}" || true
+
+# Remover entrada do DynamoDB
+aws dynamodb delete-item \
+    --table-name ${DYNAMODB_TABLE} \
+    --key '{"LockID": {"S": "'${BUCKET_NAME}'/'${STATE_KEY}'-md5"}}' || true
 
 echo "Iniciando setup da infraestrutura base..."
 
@@ -54,7 +32,7 @@ cd terraform/base
 terraform init \
     -backend-config="bucket=${BUCKET_NAME}" \
     -backend-config="key=${STATE_KEY}" \
-    -reconfigure
+    -force-copy
 
 # Aplicar configuração com a região especificada
 terraform apply -auto-approve \
