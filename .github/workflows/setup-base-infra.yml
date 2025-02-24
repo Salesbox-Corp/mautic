@@ -4,22 +4,19 @@ on:
   workflow_dispatch:
     inputs:
       aws_region:
-        description: 'AWS Region para recursos (não alterar sem motivo)'
+        description: 'AWS Region'
         required: true
         default: 'us-east-2'
-        type: choice
-        options:
-          - 'us-east-2'  # Ohio (recomendado)
-          - 'us-east-1'  # Virginia
-          - 'us-west-2'  # Oregon
-      force_recreate:
-        description: 'Forçar recriação da infra base? (CUIDADO)'
-        type: boolean
+        type: string
+      force_delete_state:
+        description: 'Forçar deleção do estado do Terraform'
         required: true
+        type: boolean
         default: false
 
 env:
   AWS_REGION: ${{ github.event.inputs.aws_region }}
+  FORCE_DELETE_STATE: ${{ github.event.inputs.force_delete_state }}
 
 jobs:
   validate:
@@ -39,8 +36,8 @@ jobs:
         run: |
           # Verificar se VPC existe
           VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=mautic-shared-vpc" --query 'Vpcs[0].VpcId' --output text)
-          if [ "$VPC_ID" != "None" ] && [ "${{ github.event.inputs.force_recreate }}" != "true" ]; then
-            echo "Infraestrutura base já existe. Use force_recreate=true para recriar."
+          if [ "$VPC_ID" != "None" ] && [ "${{ github.event.inputs.force_delete_state }}" != "true" ]; then
+            echo "Infraestrutura base já existe. Use force_delete_state=true para recriar."
             exit 1
           fi
 
@@ -61,22 +58,10 @@ jobs:
         uses: hashicorp/setup-terraform@v3
 
       - name: Create Base Infrastructure
+        env:
+          FORCE_DELETE_STATE: ${{ github.event.inputs.force_delete_state }}
         run: |
-          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
-
-          cd terraform/base
-          
-          # Inicializar Terraform com região específica para o backend
-          terraform init \
-            -backend-config="bucket=${BUCKET_NAME}" \
-            -backend-config="key=base/terraform.tfstate" \
-            -backend-config="region=us-east-1" \
-            -backend-config="dynamodb_table=mautic-terraform-lock"
-          
-          # Passar região como variável para os recursos
-          terraform plan -var="aws_region=${AWS_REGION}" -out=tfplan
-          terraform apply tfplan
+          ./scripts/setup-base-infra.sh ${{ env.AWS_REGION }}
 
       - name: Verify Base Infrastructure
         run: |
@@ -110,12 +95,4 @@ jobs:
 
       - name: Cleanup Failed Infrastructure
         run: |
-          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
-
-          cd terraform/base
-          terraform init \
-            -backend-config="bucket=${BUCKET_NAME}" \
-            -backend-config="key=base/terraform.tfstate"
-          
-          terraform destroy -auto-approve 
+          ./scripts/setup-base-infra.sh ${{ env.AWS_REGION }} 
