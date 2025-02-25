@@ -28,6 +28,9 @@ SUBNET_IDS=$(aws ssm get-parameter \
   --query "Parameter.Value" \
   --output text)
 
+# Converter a string de subnets em formato adequado para o Terraform
+SUBNET_IDS_TF="[\"$(echo $SUBNET_IDS | sed 's/,/\",\"/g')\"]"
+
 # RDS Endpoint
 RDS_ENDPOINT=$(aws ssm get-parameter \
   --name "/mautic/${AWS_REGION}/shared/rds/endpoint" \
@@ -158,7 +161,8 @@ echo "Preparando configuração Terraform..."
 mkdir -p "${CLIENT_DIR}"
 
 # Exportar variáveis para o template
-export CLIENT ENVIRONMENT AWS_REGION RDS_ENDPOINT DB_NAME DB_USER ECR_REPO_URL VPC_ID SUBNET_IDS
+export CLIENT ENVIRONMENT AWS_REGION RDS_ENDPOINT DB_NAME DB_USER ECR_REPO_URL VPC_ID
+export SUBNET_IDS="$SUBNET_IDS_TF"
 envsubst < terraform/templates/client-minimal/terraform.tfvars > "${CLIENT_DIR}/terraform.tfvars"
 
 # Copiar arquivos do template
@@ -211,9 +215,22 @@ cd "${CLIENT_DIR}"
 terraform init
 
 echo "Planejando alterações..."
-terraform plan -out=tfplan
+if ! terraform plan -out=tfplan; then
+  echo "Erro no planejamento do Terraform"
+  exit 1
+fi
 
 echo "Aplicando alterações..."
-terraform apply tfplan
+if ! terraform apply tfplan; then
+  echo "Erro na aplicação do Terraform"
+  exit 1
+fi
+
+# Verificar se o cluster foi criado
+CLUSTER_NAME="mautic-${CLIENT}-${ENVIRONMENT}-cluster"
+if ! aws ecs describe-clusters --clusters $CLUSTER_NAME --query 'clusters[0].status' --output text | grep -q ACTIVE; then
+  echo "Erro: Cluster ECS não foi criado corretamente"
+  exit 1
+fi
 
 echo "Setup concluído para ${CLIENT}/${ENVIRONMENT}" 

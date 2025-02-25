@@ -71,7 +71,7 @@ variable "vpc_id" {
 
 variable "subnet_ids" {
   description = "IDs das subnets compartilhadas"
-  type        = string
+  type        = list(string)
 }
 
 # ... outras variáveis necessárias ... 

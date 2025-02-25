@@ -94,12 +94,16 @@ jobs:
           AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
 
-          ./scripts/setup-client.sh \
+          # Executar setup com tratamento de erro
+          if ! ./scripts/setup-client.sh \
             ${{ github.event.inputs.client }} \
             ${{ github.event.inputs.environment }} \
-            ${{ env.AWS_REGION }}
+            ${{ env.AWS_REGION }}; then
+            echo "Erro durante o setup do cliente"
+            exit 1
+          fi
 
-          # Verificar se os recursos foram criados
+          # Verificação adicional dos recursos
           cd ${{ env.CLIENT_DIR }}
           
           # Verificar cluster ECS
@@ -108,6 +112,8 @@ jobs:
             echo "Erro: Cluster ECS não foi criado corretamente"
             exit 1
           fi
+
+          echo "Verificação de recursos concluída com sucesso"
 
       - name: Cleanup Failed Resources
         if: failure()
