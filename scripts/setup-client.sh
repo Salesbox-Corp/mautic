@@ -163,6 +163,7 @@ envsubst < terraform/templates/client-minimal/terraform.tfvars > "${CLIENT_DIR}/
 
 # Copiar arquivos do template
 cp terraform/templates/client-minimal/main.tf "${CLIENT_DIR}/"
+sed -i '/^provider "aws" {/,/^}/d' "${CLIENT_DIR}/main.tf"
 cp terraform/templates/client-minimal/variables.tf "${CLIENT_DIR}/"
 
 # Criar provider.tf e backend.tf
@@ -180,11 +181,12 @@ terraform {
   }
 }
 
+# Provider principal para a região do cliente
 provider "aws" {
   region = var.aws_region
 }
 
-# Provider para recursos que precisam estar em us-east-1
+# Provider para recursos que precisam estar em us-east-1 (como ACM)
 provider "aws" {
   alias  = "us-east-1"
   region = "us-east-1"

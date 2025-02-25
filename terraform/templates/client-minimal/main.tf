@@ -115,9 +115,6 @@ resource "aws_iam_role_policy" "ecs_task_secrets" {
   })
 }
 
-# Obter ID da conta AWS
-data "aws_caller_identity" "current" {}
-
 # Adicionar provider alternativo
 provider "aws" {
   alias  = "us-east-1"
