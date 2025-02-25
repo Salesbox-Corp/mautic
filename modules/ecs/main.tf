@@ -89,4 +89,9 @@ resource "aws_ecs_service" "main" {
   }
 
   tags = var.tags
+}
+
+# Ajustar o caminho do secret
+data "aws_secretsmanager_secret" "rds_master" {
+  name = "/mautic/${var.aws_region}/shared/rds/master"
 } 

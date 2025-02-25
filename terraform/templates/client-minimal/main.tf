@@ -7,7 +7,7 @@ module "naming" {
 }
 
 # Buscar VPC compartilhada existente
-data "aws_vpc" "shared" {
+data "aws_vpcs" "shared" {
   filter {
     name   = "tag:Name"
     values = ["mautic-shared-vpc"]
@@ -17,18 +17,39 @@ data "aws_vpc" "shared" {
     name   = "tag:Environment"
     values = ["shared"]
   }
+
+  filter {
+    name   = "tag:Project"
+    values = ["mautic"]
+  }
+
+  filter {
+    name   = "tag:ManagedBy"
+    values = ["terraform"]
+  }
+
+  state = "available"
+}
+
+locals {
+  vpc_id = tolist(data.aws_vpcs.shared.ids)[0]
 }
 
 # Buscar subnets privadas
 data "aws_subnets" "private" {
   filter {
     name   = "vpc-id"
-    values = [data.aws_vpc.shared.id]
+    values = [local.vpc_id]
   }
 
   filter {
     name   = "tag:Type"
     values = ["private"]
+  }
+
+  filter {
+    name   = "tag:Environment"
+    values = ["shared"]
   }
 }
 
@@ -91,7 +112,7 @@ module "ecs" {
   aws_region        = var.aws_region
   task_cpu          = var.task_cpu
   task_memory       = var.task_memory
-  vpc_id            = data.aws_vpc.shared.id
+  vpc_id            = local.vpc_id
   subnet_ids        = data.aws_subnets.private.ids
   tags              = module.naming.tags
   client            = var.client
