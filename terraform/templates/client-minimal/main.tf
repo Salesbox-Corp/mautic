@@ -11,6 +11,9 @@ module "shared_vpc" {
   aws_region = var.aws_region
 }
 
+# No início do arquivo, após os módulos
+data "aws_caller_identity" "current" {}
+
 # Criar roles do ECS
 resource "aws_iam_role" "ecs_execution" {
   name = "${module.naming.prefix}-ecs-execution"
@@ -113,10 +116,4 @@ resource "aws_iam_role_policy" "ecs_task_secrets" {
       }
     ]
   })
-}
-
-# Adicionar provider alternativo
-provider "aws" {
-  alias  = "us-east-1"
-  region = "us-east-1"
 } 
