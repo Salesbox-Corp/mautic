@@ -17,15 +17,20 @@ echo "Iniciando setup para ${CLIENT}/${ENVIRONMENT} na região ${AWS_REGION}..."
 # Obter informações da infra compartilhada da região específica
 echo "Obtendo informações da infraestrutura compartilhada na região ${AWS_REGION}..."
 
-# RDS Endpoint
-RDS_ENDPOINT=$(aws ssm get-parameter \
-  --name "/mautic/${AWS_REGION}/shared/rds/endpoint" \
-  --query "Parameter.Value" \
-  --output text)
+# Verificar se o secret existe antes de tentar usar
+echo "Verificando secret do RDS master..."
+if ! aws secretsmanager describe-secret \
+  --secret-id "/mautic/${AWS_REGION}/shared/rds/master" \
+  --region "${AWS_REGION}" >/dev/null 2>&1; then
+  echo "Erro: Secret do RDS master não encontrado em /mautic/${AWS_REGION}/shared/rds/master"
+  echo "Verifique se a infraestrutura base foi criada corretamente na região ${AWS_REGION}"
+  exit 1
+fi
 
 # Credenciais RDS Master
 RDS_MASTER_SECRET=$(aws secretsmanager get-secret-value \
   --secret-id "/mautic/${AWS_REGION}/shared/rds/master" \
+  --region "${AWS_REGION}" \
   --query 'SecretString' \
   --output text)
 

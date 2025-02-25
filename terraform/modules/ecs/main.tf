@@ -1,8 +1,3 @@
-module "shared_vpc" {
-  source = "../shared_vpc"
-  aws_region = var.aws_region
-}
-
 resource "aws_ecs_cluster" "main" {
   name = "${var.project_name}-cluster"
   
@@ -27,12 +22,12 @@ resource "aws_ecs_cluster_capacity_providers" "main" {
 # Buscar credenciais do banco master
 data "aws_secretsmanager_secret" "rds_master" {
   name     = "/mautic/${var.aws_region}/shared/rds/master"
-  provider = aws.us-east-1  # Sempre buscar na região us-east-1
+  provider = local.secrets_region != var.aws_region ? aws.us-east-1 : null
 }
 
 data "aws_secretsmanager_secret_version" "rds_master" {
   secret_id = data.aws_secretsmanager_secret.rds_master.id
-  provider  = aws.us-east-1
+  provider  = local.secrets_region != var.aws_region ? aws.us-east-1 : null
 }
 
 # Buscar credenciais do cliente
@@ -143,7 +138,7 @@ resource "aws_lb" "main" {
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
-  subnets           = module.shared_vpc.public_subnet_ids
+  subnets           = var.subnet_ids
 
   tags = var.tags
 }
@@ -197,12 +192,12 @@ resource "aws_ecs_service" "main" {
 }
 
 resource "aws_security_group" "ecs_tasks" {
-  vpc_id = module.shared_vpc.vpc_id
+  vpc_id = var.vpc_id
   # ... resto da configuração ...
 }
 
 resource "aws_security_group" "alb" {
-  vpc_id = module.shared_vpc.vpc_id
+  vpc_id = var.vpc_id
   # ... resto da configuração ...
 }
 
@@ -211,7 +206,7 @@ resource "aws_lb_target_group" "main" {
   name        = "${var.project_name}-tg"
   port        = 80
   protocol    = "HTTP"
-  vpc_id      = module.shared_vpc.vpc_id
+  vpc_id      = var.vpc_id
   target_type = "ip"
 
   health_check {

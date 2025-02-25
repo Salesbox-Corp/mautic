@@ -164,4 +164,14 @@ variable "db_name" {
 variable "db_username" {
   description = "Usuário do banco de dados"
   type        = string
+}
+
+variable "secrets_region" {
+  description = "Região onde os secrets estão armazenados"
+  type        = string
+  default     = null  # Se null, usa a mesma região do provider principal
+}
+
+locals {
+  secrets_region = coalesce(var.secrets_region, var.aws_region)
 } 
