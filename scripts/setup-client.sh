@@ -155,8 +155,8 @@ cp terraform/templates/client-minimal/main.tf "${CLIENT_DIR}/"
 sed -i '/^provider "aws" {/,/^}/d' "${CLIENT_DIR}/main.tf"
 cp terraform/templates/client-minimal/variables.tf "${CLIENT_DIR}/"
 
-# Após copiar os arquivos do template, remover qualquer referência ao módulo shared_vpc
-sed -i '/module "shared_vpc"/,/^}/d' "${CLIENT_DIR}/main.tf"
+# Remover qualquer referência ao módulo shared_vpc
+find "${CLIENT_DIR}" -type f -name "*.tf" -exec sed -i '/module.*"shared_vpc"/,/^}/d' {} \;
 
 # Criar provider.tf e backend.tf
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)

@@ -6,26 +6,29 @@ module "naming" {
   project     = var.project
 }
 
-# Remover o módulo shared_vpc e usar data sources para obter a VPC existente
+# Buscar VPC compartilhada existente
 data "aws_vpc" "shared" {
-  tags = {
-    Name = "mautic-shared-vpc"
-    Environment = "shared"
-    Project = "mautic"
+  filter {
+    name   = "tag:Name"
+    values = ["mautic-shared-vpc"]
+  }
+
+  filter {
+    name   = "tag:Environment"
+    values = ["shared"]
   }
 }
 
-# Buscar subnets privadas para o ECS
+# Buscar subnets privadas
 data "aws_subnets" "private" {
   filter {
     name   = "vpc-id"
     values = [data.aws_vpc.shared.id]
   }
 
-  tags = {
-    Environment = "shared"
-    Project = "mautic"
-    Type    = "private"  # Importante: usar apenas subnets privadas para o ECS
+  filter {
+    name   = "tag:Type"
+    values = ["private"]
   }
 }
 
@@ -89,7 +92,7 @@ module "ecs" {
   task_cpu          = var.task_cpu
   task_memory       = var.task_memory
   vpc_id            = data.aws_vpc.shared.id
-  subnet_ids        = data.aws_subnets.private.ids  # Usar subnets privadas
+  subnet_ids        = data.aws_subnets.private.ids
   tags              = module.naming.tags
   client            = var.client
   environment       = var.environment
