@@ -102,8 +102,7 @@ module "ecs" {
   source = "../../../../modules/ecs"
   
   providers = {
-    aws           = aws
-    aws.us-east-1 = aws.us-east-1
+    aws = aws
   }
 
   project_name       = module.naming.prefix
