@@ -1,0 +1,188 @@
+name: Cleanup Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      aws_region:
+        description: 'AWS Region para limpar'
+        required: true
+        default: 'us-east-2'
+        type: choice
+        options:
+          - 'us-east-2'  # Ohio
+          - 'us-east-1'  # Virginia
+          - 'us-west-2'  # Oregon
+      force_cleanup:
+        description: 'Forçar limpeza mesmo com erros'
+        required: true
+        type: boolean
+        default: false
+
+env:
+  AWS_REGION: ${{ github.event.inputs.aws_region }}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Get AWS Account ID
+        id: account
+        run: |
+          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "account_id=${AWS_ACCOUNT_ID}" >> $GITHUB_OUTPUT
+
+      - name: Cleanup Infrastructure
+        run: |
+          # Configurações
+          AWS_ACCOUNT_ID="${{ steps.account.outputs.account_id }}"
+          BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
+          DYNAMODB_TABLE="mautic-terraform-lock"
+          STATE_KEY="regions/${AWS_REGION}/terraform.tfstate"
+
+          echo "Iniciando limpeza da infraestrutura na região ${AWS_REGION}..."
+
+          # 1. Tentar destroy via Terraform
+          cd terraform/base
+          terraform init \
+            -backend-config="bucket=${BUCKET_NAME}" \
+            -backend-config="key=${STATE_KEY}" \
+            -backend-config="region=us-east-1" \
+            -backend-config="dynamodb_table=${DYNAMODB_TABLE}"
+
+          terraform destroy -auto-approve \
+            -var="aws_region=${AWS_REGION}" || true
+
+          # 2. Limpar ECR Repositories
+          echo "Limpando repositórios ECR..."
+          REPOS=$(aws ecr describe-repositories --query 'repositories[*].repositoryName' --output text)
+          for REPO in $REPOS; do
+            if [[ $REPO == mautic-* ]]; then
+              aws ecr delete-repository --repository-name $REPO --force || true
+            fi
+          done
+
+          # 3. Limpar RDS
+          echo "Limpando RDS..."
+          DB_INSTANCES=$(aws rds describe-db-instances \
+            --query "DBInstances[?DBInstanceIdentifier=='mautic-shared-db'].DBInstanceIdentifier" \
+            --output text)
+          for DB in $DB_INSTANCES; do
+            aws rds delete-db-instance \
+              --db-instance-identifier $DB \
+              --skip-final-snapshot \
+              --delete-automated-backups
+
+            echo "Aguardando deleção do RDS..."
+            aws rds wait db-instance-deleted --db-instance-identifier $DB
+          done
+
+          # 4. Limpar VPC e recursos relacionados
+          echo "Limpando VPCs..."
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Name,Values=mautic-shared-vpc" \
+            --query 'Vpcs[0].VpcId' --output text)
+
+          if [ "$VPC_ID" != "None" ]; then
+            # 4.1 Remover ECS Services e Tasks
+            CLUSTERS=$(aws ecs list-clusters --query 'clusterArns[]' --output text)
+            for CLUSTER in $CLUSTERS; do
+              SERVICES=$(aws ecs list-services --cluster $CLUSTER --query 'serviceArns[]' --output text)
+              for SERVICE in $SERVICES; do
+                aws ecs update-service --cluster $CLUSTER --service $SERVICE --desired-count 0
+                aws ecs delete-service --cluster $CLUSTER --service $SERVICE --force
+              done
+              aws ecs delete-cluster --cluster $CLUSTER
+            done
+
+            # 4.2 Remover Load Balancers e Target Groups
+            LBS=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[*].LoadBalancerArn' --output text)
+            for LB in $LBS; do
+              aws elbv2 delete-load-balancer --load-balancer-arn $LB
+            done
+
+            TGS=$(aws elbv2 describe-target-groups --query 'TargetGroups[*].TargetGroupArn' --output text)
+            for TG in $TGS; do
+              aws elbv2 delete-target-group --target-group-arn $TG
+            done
+
+            # 4.3 Remover NAT Gateways
+            NAT_GATEWAYS=$(aws ec2 describe-nat-gateways \
+              --filter "Name=vpc-id,Values=${VPC_ID}" \
+              --query 'NatGateways[*].NatGatewayId' --output text)
+            for NAT in $NAT_GATEWAYS; do
+              aws ec2 delete-nat-gateway --nat-gateway-id $NAT
+            done
+            echo "Aguardando deleção dos NAT Gateways..."
+            sleep 30
+
+            # 4.4 Remover Security Groups
+            SG_IDS=$(aws ec2 describe-security-groups \
+              --filters "Name=vpc-id,Values=${VPC_ID}" \
+              --query 'SecurityGroups[?GroupName!=`default`].GroupId' --output text)
+            for SG in $SG_IDS; do
+              aws ec2 delete-security-group --group-id $SG || true
+            done
+
+            # 4.5 Remover Internet Gateway
+            IGW_ID=$(aws ec2 describe-internet-gateways \
+              --filters "Name=attachment.vpc-id,Values=${VPC_ID}" \
+              --query 'InternetGateways[0].InternetGatewayId' --output text)
+            if [ ! -z "$IGW_ID" ]; then
+              aws ec2 detach-internet-gateway --internet-gateway-id $IGW_ID --vpc-id $VPC_ID
+              aws ec2 delete-internet-gateway --internet-gateway-id $IGW_ID
+            fi
+
+            # 4.6 Remover Subnets
+            SUBNET_IDS=$(aws ec2 describe-subnets \
+              --filters "Name=vpc-id,Values=${VPC_ID}" \
+              --query 'Subnets[*].SubnetId' --output text)
+            for SUBNET in $SUBNET_IDS; do
+              aws ec2 delete-subnet --subnet-id $SUBNET
+            done
+
+            # 4.7 Finalmente remover a VPC
+            aws ec2 delete-vpc --vpc-id $VPC_ID
+          fi
+
+          # 5. Limpar Secrets e Parameters
+          echo "Limpando Secrets e Parameters..."
+          
+          # 5.1 Secrets Manager
+          SECRETS=$(aws secretsmanager list-secrets \
+            --query "SecretList[?starts_with(Name, '/mautic/${AWS_REGION}')].Name" \
+            --output text)
+          for SECRET in $SECRETS; do
+            aws secretsmanager delete-secret \
+              --secret-id $SECRET \
+              --force-delete-without-recovery || true
+          done
+
+          # 5.2 SSM Parameters
+          PARAMETERS=$(aws ssm describe-parameters \
+            --parameter-filters "Key=Name,Values=/mautic/${AWS_REGION}/" \
+            --query 'Parameters[*].Name' --output text)
+          for PARAM in $PARAMETERS; do
+            aws ssm delete-parameter --name $PARAM || true
+          done
+
+          # 6. Limpar estado do Terraform
+          echo "Limpando estado do Terraform..."
+          aws s3 rm "s3://${BUCKET_NAME}/${STATE_KEY}" || true
+          aws dynamodb delete-item \
+            --table-name ${DYNAMODB_TABLE} \
+            --key "{\"LockID\":{\"S\":\"${STATE_KEY}\"}}" \
+            --region us-east-1 || true
+
+          echo "Limpeza concluída!" 
