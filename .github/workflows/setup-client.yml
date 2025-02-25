@@ -93,6 +93,25 @@ jobs:
         run: |
           AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
+          
+          # Limpar locks pendentes antes de começar
+          echo "Verificando e removendo locks pendentes..."
+          aws dynamodb scan \
+            --table-name mautic-terraform-lock \
+            --region us-east-1 \
+            --projection-expression "LockID" \
+            --filter-expression "contains(LockID, :path)" \
+            --expression-attribute-values '{":path":{"S":"clients/${{ github.event.inputs.client }}/${{ github.event.inputs.environment }}"}}' \
+            --query "Items[].LockID.S" \
+            --output text | while read -r lock_id; do
+              if [ ! -z "$lock_id" ]; then
+                echo "Removendo lock: $lock_id"
+                aws dynamodb delete-item \
+                  --table-name mautic-terraform-lock \
+                  --key "{\"LockID\":{\"S\":\"$lock_id\"}}" \
+                  --region us-east-1
+              fi
+            done
 
           # Executar setup com tratamento de erro
           if ! ./scripts/setup-client.sh \

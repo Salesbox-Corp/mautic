@@ -198,20 +198,51 @@ terraform {
 }
 EOF
 
-# Inicializar Terraform e criar recursos
+# Adicionar esta função no início do script, após as validações iniciais
+remove_terraform_lock() {
+    local lock_id="$1"
+    local table_name="mautic-terraform-lock"
+    local state_path="$2"
+
+    echo "Tentando remover lock pendente..."
+    aws dynamodb delete-item \
+        --table-name "$table_name" \
+        --key "{\"LockID\": {\"S\": \"$state_path\"}}" \
+        --region "us-east-1"
+    
+    echo "Lock removido com sucesso"
+}
+
+# Atualizar a parte do Terraform para incluir tratamento de lock
 cd "${CLIENT_DIR}"
 terraform init
 
 echo "Planejando alterações..."
-if ! terraform plan -out=tfplan; then
-  echo "Erro no planejamento do Terraform"
-  exit 1
+if ! terraform plan -out=tfplan 2>terraform.err; then
+    if grep -q "Error acquiring the state lock" terraform.err; then
+        # Extrair informações do lock
+        LOCK_PATH=$(grep "Path:" terraform.err | awk '{print $2}')
+        
+        echo "Lock detectado no estado. Tentando remover..."
+        remove_terraform_lock "$LOCK_ID" "$LOCK_PATH"
+        
+        # Tentar novamente com lock removido
+        echo "Tentando plan novamente..."
+        if ! terraform plan -out=tfplan; then
+            echo "Erro no planejamento do Terraform mesmo após remover lock"
+            exit 1
+        fi
+    else
+        cat terraform.err
+        echo "Erro no planejamento do Terraform"
+        exit 1
+    fi
 fi
 
 echo "Aplicando alterações..."
 if ! terraform apply tfplan; then
-  echo "Erro na aplicação do Terraform"
-  exit 1
+    echo "Erro na aplicação do Terraform"
+    exit 1
 fi
 
 # Verificar se o cluster foi criado
