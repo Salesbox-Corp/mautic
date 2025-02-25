@@ -27,8 +27,6 @@ data "aws_vpcs" "shared" {
     name   = "tag:ManagedBy"
     values = ["terraform"]
   }
-
-  state = "available"
 }
 
 locals {
