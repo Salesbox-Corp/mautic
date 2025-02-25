@@ -64,4 +64,14 @@ variable "ecr_repository_url" {
   default     = null
 }
 
+variable "vpc_id" {
+  description = "ID da VPC compartilhada"
+  type        = string
+}
+
+variable "subnet_ids" {
+  description = "IDs das subnets compartilhadas"
+  type        = string
+}
+
 # ... outras variáveis necessárias ... 

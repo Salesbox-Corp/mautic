@@ -77,6 +77,37 @@ echo "Criando banco de dados..."
 DB_NAME="mautic_${CLIENT}_${ENVIRONMENT}"
 DB_USER="${DB_NAME}_user"
 
+# Validar endpoint do RDS antes de prosseguir
+if [ -z "$RDS_ENDPOINT" ]; then
+  echo "Erro: Endpoint do RDS não encontrado no SSM Parameter Store"
+  exit 1
+fi
+
+# Garantir que o endpoint está no formato correto
+# Remover protocolo se existir
+RDS_ENDPOINT=$(echo $RDS_ENDPOINT | sed 's|^mysql://||')
+# Remover porta se existir
+RDS_ENDPOINT=$(echo $RDS_ENDPOINT | sed 's/:[0-9]*$//')
+
+echo "Usando endpoint RDS: ${RDS_ENDPOINT}"
+
+# Antes de criar o banco, verificar se consegue conectar ao RDS
+echo "Verificando conexão com RDS..."
+if ! mysql -h "${RDS_ENDPOINT}" \
+          -u "${MASTER_USER}" \
+          -p"${MASTER_PASSWORD}" \
+          --protocol=TCP \
+          -P 3306 \
+          -e "SELECT 1;" > /dev/null 2>&1; then
+  echo "Erro: Não foi possível conectar ao RDS em ${RDS_ENDPOINT}"
+  echo "Detalhes da conexão (sem senha):"
+  echo "Host: ${RDS_ENDPOINT}"
+  echo "User: ${MASTER_USER}"
+  echo "Protocol: TCP"
+  echo "Port: 3306"
+  exit 1
+fi
+
 mysql -h "${RDS_ENDPOINT}" \
   -u "${MASTER_USER}" \
   -p"${MASTER_PASSWORD}" \
@@ -111,13 +142,6 @@ envsubst < terraform/templates/client-minimal/terraform.tfvars > "${CLIENT_DIR}/
 cp terraform/templates/client-minimal/main.tf "${CLIENT_DIR}/"
 cp terraform/templates/client-minimal/variables.tf "${CLIENT_DIR}/"
 cp terraform/templates/client-minimal/backend.tf "${CLIENT_DIR}/"
-
-# Fazer backup do estado atual
-aws s3 cp s3://mautic-terraform-state-***/base/terraform.tfstate \
-    s3://mautic-terraform-state-***/base/terraform.tfstate.backup
-
-# Remover o estado atual
-aws s3 rm s3://mautic-terraform-state-***/base/terraform.tfstate
 
 # Inicializar Terraform com backend configuration
 cd "${CLIENT_DIR}"
