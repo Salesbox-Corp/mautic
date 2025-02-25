@@ -99,8 +99,109 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Cleanup Failed Infrastructure
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Cleanup Infrastructure
         run: |
-          # Adicionar permissão de execução ao script
-          chmod +x ./scripts/setup-base-infra.sh
-          ./scripts/setup-base-infra.sh ${{ env.AWS_REGION }} 
+          # Primeiro tentar destroy normal via Terraform
+          cd terraform/base
+          terraform init \
+            -backend-config="bucket=mautic-terraform-state-${AWS_ACCOUNT_ID}" \
+            -backend-config="key=regions/${AWS_REGION}/terraform.tfstate" \
+            -backend-config="region=us-east-1" \
+            -backend-config="dynamodb_table=mautic-terraform-lock"
+
+          terraform destroy -auto-approve \
+            -var="aws_region=${AWS_REGION}" || true
+
+          # Forçar remoção de recursos mesmo se terraform destroy falhar
+          echo "Forçando remoção de recursos..."
+
+          # 1. Remover RDS
+          DB_INSTANCE=$(aws rds describe-db-instances \
+            --query "DBInstances[?DBInstanceIdentifier=='mautic-shared-db'].DBInstanceIdentifier" \
+            --output text)
+          if [ ! -z "$DB_INSTANCE" ]; then
+            aws rds delete-db-instance \
+              --db-instance-identifier mautic-shared-db \
+              --skip-final-snapshot \
+              --delete-automated-backups
+            
+            echo "Aguardando deleção do RDS..."
+            aws rds wait db-instance-deleted \
+              --db-instance-identifier mautic-shared-db
+          fi
+
+          # 2. Remover VPC e recursos relacionados
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Name,Values=mautic-shared-vpc" \
+            --query 'Vpcs[0].VpcId' --output text)
+
+          if [ "$VPC_ID" != "None" ]; then
+            # Remover NAT Gateways
+            NAT_GATEWAYS=$(aws ec2 describe-nat-gateways \
+              --filter "Name=vpc-id,Values=${VPC_ID}" \
+              --query 'NatGateways[*].NatGatewayId' --output text)
+            for NAT_ID in $NAT_GATEWAYS; do
+              aws ec2 delete-nat-gateway --nat-gateway-id $NAT_ID
+            done
+
+            # Aguardar NAT Gateways serem deletados
+            echo "Aguardando deleção dos NAT Gateways..."
+            sleep 30
+
+            # Remover Load Balancers
+            LBS=$(aws elbv2 describe-load-balancers \
+              --query 'LoadBalancers[?VpcId==`'${VPC_ID}'`].LoadBalancerArn' \
+              --output text)
+            for LB in $LBS; do
+              aws elbv2 delete-load-balancer --load-balancer-arn $LB
+            done
+
+            # Remover Security Groups (exceto o default)
+            SG_IDS=$(aws ec2 describe-security-groups \
+              --filters "Name=vpc-id,Values=${VPC_ID}" \
+              --query 'SecurityGroups[?GroupName!=`default`].GroupId' \
+              --output text)
+            for SG_ID in $SG_IDS; do
+              aws ec2 delete-security-group --group-id $SG_ID
+            done
+
+            # Desassociar e remover Internet Gateway
+            IGW_ID=$(aws ec2 describe-internet-gateways \
+              --filters "Name=attachment.vpc-id,Values=${VPC_ID}" \
+              --query 'InternetGateways[0].InternetGatewayId' --output text)
+            if [ ! -z "$IGW_ID" ]; then
+              aws ec2 detach-internet-gateway \
+                --internet-gateway-id $IGW_ID \
+                --vpc-id $VPC_ID
+              aws ec2 delete-internet-gateway \
+                --internet-gateway-id $IGW_ID
+            fi
+
+            # Remover subnets
+            SUBNET_IDS=$(aws ec2 describe-subnets \
+              --filters "Name=vpc-id,Values=${VPC_ID}" \
+              --query 'Subnets[*].SubnetId' --output text)
+            for SUBNET_ID in $SUBNET_IDS; do
+              aws ec2 delete-subnet --subnet-id $SUBNET_ID
+            done
+
+            # Finalmente remover a VPC
+            aws ec2 delete-vpc --vpc-id $VPC_ID
+          fi
+
+          # 3. Limpar Secrets e SSM Parameters
+          aws secretsmanager delete-secret \
+            --secret-id "/mautic/${AWS_REGION}/shared/rds/master" \
+            --force-delete-without-recovery || true
+
+          aws ssm delete-parameter \
+            --name "/mautic/${AWS_REGION}/shared/rds/endpoint" || true
+          aws ssm delete-parameter \
+            --name "/mautic/${AWS_REGION}/shared/vpc/id" || true
+          aws ssm delete-parameter \
+            --name "/mautic/${AWS_REGION}/shared/vpc/subnet_ids" || true
+
+          echo "Limpeza concluída" 
