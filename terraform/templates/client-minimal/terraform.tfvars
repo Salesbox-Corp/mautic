@@ -7,10 +7,6 @@ aws_region  = "${AWS_REGION}"
 task_cpu    = 1024
 task_memory = 2048
 
-# Configurações de rede
-vpc_id       = "${VPC_ID}"
-subnet_ids   = ${SUBNET_IDS}
-
 # Configurações do banco de dados
 db_host     = "${RDS_ENDPOINT}"
 db_name     = "${DB_NAME}"

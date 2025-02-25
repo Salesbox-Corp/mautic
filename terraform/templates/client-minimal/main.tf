@@ -6,12 +6,28 @@ module "naming" {
   project     = var.project
 }
 
-module "shared_vpc" {
-  source = "../../../../modules/shared_vpc"
-  aws_region = var.aws_region
+# Remover o módulo shared_vpc e usar data sources para obter a VPC existente
+data "aws_vpc" "shared" {
+  tags = {
+    Name = "mautic-shared-vpc"
+    Environment = "shared"
+    Project = "mautic"
+  }
 }
 
-# No início do arquivo, após os módulos
+data "aws_subnets" "shared" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.shared.id]
+  }
+
+  tags = {
+    Environment = "shared"
+    Project = "mautic"
+  }
+}
+
+# Obter ID da conta AWS
 data "aws_caller_identity" "current" {}
 
 # Criar roles do ECS
@@ -70,8 +86,8 @@ module "ecs" {
   aws_region        = var.aws_region
   task_cpu          = var.task_cpu
   task_memory       = var.task_memory
-  vpc_id            = var.vpc_id
-  subnet_ids        = var.subnet_ids
+  vpc_id            = data.aws_vpc.shared.id
+  subnet_ids        = data.aws_subnets.shared.ids
   tags              = module.naming.tags
   client            = var.client
   environment       = var.environment

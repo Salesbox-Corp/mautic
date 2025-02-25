@@ -17,20 +17,6 @@ echo "Iniciando setup para ${CLIENT}/${ENVIRONMENT} na região ${AWS_REGION}..."
 # Obter informações da infra compartilhada da região específica
 echo "Obtendo informações da infraestrutura compartilhada na região ${AWS_REGION}..."
 
-# VPC e Subnets
-VPC_ID=$(aws ssm get-parameter \
-  --name "/mautic/${AWS_REGION}/shared/vpc/id" \
-  --query "Parameter.Value" \
-  --output text)
-
-SUBNET_IDS=$(aws ssm get-parameter \
-  --name "/mautic/${AWS_REGION}/shared/vpc/subnet_ids" \
-  --query "Parameter.Value" \
-  --output text)
-
-# Converter a string de subnets em formato adequado para o Terraform
-SUBNET_IDS_TF="[\"$(echo $SUBNET_IDS | sed 's/,/\",\"/g')\"]"
-
 # RDS Endpoint
 RDS_ENDPOINT=$(aws ssm get-parameter \
   --name "/mautic/${AWS_REGION}/shared/rds/endpoint" \
@@ -161,8 +147,7 @@ echo "Preparando configuração Terraform..."
 mkdir -p "${CLIENT_DIR}"
 
 # Exportar variáveis para o template
-export CLIENT ENVIRONMENT AWS_REGION RDS_ENDPOINT DB_NAME DB_USER ECR_REPO_URL VPC_ID
-export SUBNET_IDS="$SUBNET_IDS_TF"
+export CLIENT ENVIRONMENT AWS_REGION RDS_ENDPOINT DB_NAME DB_USER ECR_REPO_URL
 envsubst < terraform/templates/client-minimal/terraform.tfvars > "${CLIENT_DIR}/terraform.tfvars"
 
 # Copiar arquivos do template
