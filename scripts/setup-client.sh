@@ -141,14 +141,52 @@ envsubst < terraform/templates/client-minimal/terraform.tfvars > "${CLIENT_DIR}/
 # Copiar outros arquivos do template
 cp terraform/templates/client-minimal/main.tf "${CLIENT_DIR}/"
 cp terraform/templates/client-minimal/variables.tf "${CLIENT_DIR}/"
-cp terraform/templates/client-minimal/backend.tf "${CLIENT_DIR}/"
 
-# Inicializar Terraform com backend configuration
+# Atualizar a parte que cria o backend.tf e inicializa o Terraform
+
+# Antes de inicializar o Terraform, vamos garantir que temos o BUCKET_NAME
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
+
+# Criar provider.tf
+cat > "${CLIENT_DIR}/provider.tf" <<EOF
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = var.aws_region
+}
+
+provider "aws" {
+  alias  = "us-east-1"
+  region = "us-east-1"
+}
+EOF
+
+# Criar backend.tf separadamente
+cat > "${CLIENT_DIR}/backend.tf" <<EOF
+terraform {
+  backend "s3" {
+    bucket         = "${BUCKET_NAME}"
+    key            = "${STATE_KEY}"
+    region         = "us-east-1"
+    dynamodb_table = "mautic-terraform-lock"
+    encrypt        = true
+  }
+}
+EOF
+
+# Remover a cópia do backend.tf do template
+sed -i '/backend.tf/d' "${CLIENT_DIR}/"
+
+# Inicializar Terraform
 cd "${CLIENT_DIR}"
-terraform init \
-    -backend-config="bucket=${BUCKET_NAME}" \
-    -backend-config="key=${STATE_KEY}" \
-    -backend-config="region=us-east-1" \
-    -backend-config="dynamodb_table=mautic-terraform-lock"
+terraform init
 
 echo "Setup concluído para ${CLIENT}/${ENVIRONMENT}" 

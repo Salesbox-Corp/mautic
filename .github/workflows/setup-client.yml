@@ -94,35 +94,6 @@ jobs:
           AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
 
-          # Criar backend.tf no diretório do cliente
-          cat > ${{ env.CLIENT_DIR }}/backend.tf <<EOF
-          terraform {
-            required_providers {
-              aws = {
-                source  = "hashicorp/aws"
-                version = "~> 5.0"
-              }
-            }
-            
-            backend "s3" {
-              bucket         = "${BUCKET_NAME}"
-              key            = "clients/${{ github.event.inputs.client }}/${{ github.event.inputs.environment }}/terraform.tfstate"
-              region         = "us-east-1"
-              dynamodb_table = "mautic-terraform-lock"
-              encrypt        = true
-            }
-          }
-
-          provider "aws" {
-            region = var.aws_region
-          }
-
-          provider "aws" {
-            alias  = "us-east-1"
-            region = "us-east-1"
-          }
-          EOF
-
           ./scripts/setup-client.sh \
             ${{ github.event.inputs.client }} \
             ${{ github.event.inputs.environment }} \

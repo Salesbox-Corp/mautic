@@ -67,8 +67,8 @@ module "ecs" {
   aws_region        = var.aws_region
   task_cpu          = var.task_cpu
   task_memory       = var.task_memory
-  vpc_id            = module.shared_vpc.vpc_id
-  subnet_ids        = module.shared_vpc.public_subnet_ids
+  vpc_id            = var.vpc_id
+  subnet_ids        = var.subnet_ids
   tags              = module.naming.tags
   client            = var.client
   environment       = var.environment
