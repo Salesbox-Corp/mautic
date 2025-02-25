@@ -47,19 +47,23 @@ MASTER_PASSWORD=$(echo $RDS_MASTER_SECRET | jq -r '.password')
 DB_PASSWORD=$(openssl rand -base64 32)
 MAUTIC_ADMIN_PASSWORD=$(openssl rand -base64 16)
 
-# Criar secret com credenciais do cliente
-echo "Criando credenciais do cliente..."
-aws secretsmanager create-secret \
-    --name "/mautic/${CLIENT}/${ENVIRONMENT}/credentials" \
-    --secret-string "{
-        \"db_password\": \"${DB_PASSWORD}\",
-        \"mautic_admin_user\": \"admin\",
-        \"mautic_admin_password\": \"${MAUTIC_ADMIN_PASSWORD}\",
-        \"mautic_admin_email\": \"admin@${CLIENT}.com\"
-    }" || true
+# Criar secret com credenciais do cliente (ignorar se já existe)
+echo "Verificando/criando credenciais do cliente..."
+if ! aws secretsmanager describe-secret --secret-id "/mautic/${CLIENT}/${ENVIRONMENT}/credentials" >/dev/null 2>&1; then
+    aws secretsmanager create-secret \
+        --name "/mautic/${CLIENT}/${ENVIRONMENT}/credentials" \
+        --secret-string "{
+            \"db_password\": \"${DB_PASSWORD}\",
+            \"mautic_admin_user\": \"admin\",
+            \"mautic_admin_password\": \"${MAUTIC_ADMIN_PASSWORD}\",
+            \"mautic_admin_email\": \"admin@${CLIENT}.com\"
+        }"
+else
+    echo "Secret já existe, mantendo configuração atual"
+fi
 
-# Criar parâmetros de configuração do cliente
-echo "Criando parâmetros de configuração..."
+# Criar/atualizar parâmetros de configuração
+echo "Atualizando parâmetros de configuração..."
 aws ssm put-parameter \
     --name "/mautic/${CLIENT}/${ENVIRONMENT}/config/domain" \
     --value "${CLIENT}-${ENVIRONMENT}.mautic.exemplo.com" \
@@ -108,29 +112,48 @@ if ! mysql -h "${RDS_ENDPOINT}" \
   exit 1
 fi
 
-mysql -h "${RDS_ENDPOINT}" \
-  -u "${MASTER_USER}" \
-  -p"${MASTER_PASSWORD}" \
-  --protocol=TCP <<EOF
+# Verificar se o banco já existe antes de criar
+echo "Verificando banco de dados..."
+DB_EXISTS=$(mysql -h "${RDS_ENDPOINT}" \
+    -u "${MASTER_USER}" \
+    -p"${MASTER_PASSWORD}" \
+    --protocol=TCP \
+    -e "SHOW DATABASES LIKE '${DB_NAME}';" | grep ${DB_NAME} || true)
+
+if [ -z "$DB_EXISTS" ]; then
+    echo "Criando banco de dados..."
+    mysql -h "${RDS_ENDPOINT}" \
+        -u "${MASTER_USER}" \
+        -p"${MASTER_PASSWORD}" \
+        --protocol=TCP <<EOF
 CREATE DATABASE IF NOT EXISTS ${DB_NAME};
 CREATE USER IF NOT EXISTS '${DB_USER}'@'%' IDENTIFIED BY '${DB_PASSWORD}';
 GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'%';
 FLUSH PRIVILEGES;
 EOF
+else
+    echo "Banco de dados já existe, mantendo configuração atual"
+fi
 
-# Criar repositório ECR
-echo "Criando repositório ECR..."
+# Verificar/criar repositório ECR
+echo "Verificando repositório ECR..."
 ECR_REPO="mautic-${CLIENT}-${ENVIRONMENT}"
-aws ecr create-repository \
-    --repository-name "${ECR_REPO}" \
-    --image-scanning-configuration scanOnPush=true || true
+if ! aws ecr describe-repositories --repository-names "${ECR_REPO}" >/dev/null 2>&1; then
+    echo "Criando repositório ECR..."
+    aws ecr create-repository \
+        --repository-name "${ECR_REPO}" \
+        --image-scanning-configuration scanOnPush=true
+else
+    echo "Repositório ECR já existe"
+fi
 
+# Obter URL do repositório ECR
 ECR_REPO_URL=$(aws ecr describe-repositories \
     --repository-names "${ECR_REPO}" \
     --query 'repositories[0].repositoryUri' \
     --output text)
 
-# Criar diretório do cliente e preparar terraform
+# Preparar diretório Terraform
 echo "Preparando configuração Terraform..."
 mkdir -p "${CLIENT_DIR}"
 
@@ -138,13 +161,11 @@ mkdir -p "${CLIENT_DIR}"
 export CLIENT ENVIRONMENT AWS_REGION RDS_ENDPOINT DB_NAME DB_USER ECR_REPO_URL VPC_ID SUBNET_IDS
 envsubst < terraform/templates/client-minimal/terraform.tfvars > "${CLIENT_DIR}/terraform.tfvars"
 
-# Copiar outros arquivos do template
+# Copiar arquivos do template
 cp terraform/templates/client-minimal/main.tf "${CLIENT_DIR}/"
 cp terraform/templates/client-minimal/variables.tf "${CLIENT_DIR}/"
 
-# Atualizar a parte que cria o backend.tf e inicializa o Terraform
-
-# Antes de inicializar o Terraform, vamos garantir que temos o BUCKET_NAME
+# Criar provider.tf e backend.tf
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
 
@@ -163,13 +184,14 @@ provider "aws" {
   region = var.aws_region
 }
 
+# Provider para recursos que precisam estar em us-east-1
 provider "aws" {
   alias  = "us-east-1"
   region = "us-east-1"
 }
 EOF
 
-# Criar backend.tf separadamente
+# Criar backend.tf
 cat > "${CLIENT_DIR}/backend.tf" <<EOF
 terraform {
   backend "s3" {
@@ -181,9 +203,6 @@ terraform {
   }
 }
 EOF
-
-# Remover a cópia do backend.tf do template
-sed -i '/backend.tf/d' "${CLIENT_DIR}/"
 
 # Inicializar Terraform
 cd "${CLIENT_DIR}"
