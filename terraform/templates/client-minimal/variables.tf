@@ -1,4 +1,15 @@
-# Remover variáveis relacionadas à VPC pois agora é compartilhada
+# Remover estas variáveis
+# variable "vpc_id" {
+#   description = "ID da VPC compartilhada"
+#   type        = string
+# }
+
+# variable "subnet_ids" {
+#   description = "IDs das subnets compartilhadas"
+#   type        = list(string)
+# }
+
+# Manter apenas as variáveis necessárias
 variable "client" {
   description = "Nome do cliente"
   type        = string
@@ -62,16 +73,6 @@ variable "ecr_repository_url" {
   description = "URL do repositório ECR"
   type        = string
   default     = null
-}
-
-variable "vpc_id" {
-  description = "ID da VPC compartilhada"
-  type        = string
-}
-
-variable "subnet_ids" {
-  description = "IDs das subnets compartilhadas"
-  type        = list(string)
 }
 
 # ... outras variáveis necessárias ... 

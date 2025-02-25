@@ -155,6 +155,9 @@ cp terraform/templates/client-minimal/main.tf "${CLIENT_DIR}/"
 sed -i '/^provider "aws" {/,/^}/d' "${CLIENT_DIR}/main.tf"
 cp terraform/templates/client-minimal/variables.tf "${CLIENT_DIR}/"
 
+# Após copiar os arquivos do template, remover qualquer referência ao módulo shared_vpc
+sed -i '/module "shared_vpc"/,/^}/d' "${CLIENT_DIR}/main.tf"
+
 # Criar provider.tf e backend.tf
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"

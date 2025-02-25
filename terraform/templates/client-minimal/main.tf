@@ -15,7 +15,8 @@ data "aws_vpc" "shared" {
   }
 }
 
-data "aws_subnets" "shared" {
+# Buscar subnets privadas para o ECS
+data "aws_subnets" "private" {
   filter {
     name   = "vpc-id"
     values = [data.aws_vpc.shared.id]
@@ -24,6 +25,7 @@ data "aws_subnets" "shared" {
   tags = {
     Environment = "shared"
     Project = "mautic"
+    Type    = "private"  # Importante: usar apenas subnets privadas para o ECS
   }
 }
 
@@ -87,7 +89,7 @@ module "ecs" {
   task_cpu          = var.task_cpu
   task_memory       = var.task_memory
   vpc_id            = data.aws_vpc.shared.id
-  subnet_ids        = data.aws_subnets.shared.ids
+  subnet_ids        = data.aws_subnets.private.ids  # Usar subnets privadas
   tags              = module.naming.tags
   client            = var.client
   environment       = var.environment
