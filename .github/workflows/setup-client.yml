@@ -99,6 +99,16 @@ jobs:
             ${{ github.event.inputs.environment }} \
             ${{ env.AWS_REGION }}
 
+          # Verificar se os recursos foram criados
+          cd ${{ env.CLIENT_DIR }}
+          
+          # Verificar cluster ECS
+          CLUSTER_NAME="mautic-${{ github.event.inputs.client }}-${{ github.event.inputs.environment }}-cluster"
+          if ! aws ecs describe-clusters --clusters $CLUSTER_NAME --query 'clusters[0].status' --output text | grep -q ACTIVE; then
+            echo "Erro: Cluster ECS não foi criado corretamente"
+            exit 1
+          fi
+
       - name: Cleanup Failed Resources
         if: failure()
         run: |

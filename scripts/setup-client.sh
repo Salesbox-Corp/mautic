@@ -206,8 +206,14 @@ terraform {
 }
 EOF
 
-# Inicializar Terraform
+# Inicializar Terraform e criar recursos
 cd "${CLIENT_DIR}"
 terraform init
+
+echo "Planejando alterações..."
+terraform plan -out=tfplan
+
+echo "Aplicando alterações..."
+terraform apply tfplan
 
 echo "Setup concluído para ${CLIENT}/${ENVIRONMENT}" 
