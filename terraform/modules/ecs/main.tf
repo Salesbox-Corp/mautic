@@ -7,18 +7,6 @@ resource "aws_ecs_cluster" "main" {
   }
 }
 
-resource "aws_ecs_cluster_capacity_providers" "main" {
-  cluster_name = aws_ecs_cluster.main.name
-
-  capacity_providers = ["FARGATE", "FARGATE_SPOT"]
-
-  default_capacity_provider_strategy {
-    capacity_provider = "FARGATE_SPOT"
-    weight = 1
-    base   = 0
-  }
-}
-
 # Buscar credenciais do banco master
 data "aws_secretsmanager_secret" "rds_master" {
   name = "/mautic/${var.aws_region}/shared/rds/master"
@@ -146,15 +134,8 @@ resource "aws_ecs_service" "main" {
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.mautic.arn
   desired_count   = var.desired_count
-  launch_type     = null  # Necessário remover quando usando capacity providers
+  launch_type     = "FARGATE"
   
-  # Estratégia de capacity provider
-  capacity_provider_strategy {
-    capacity_provider = "FARGATE_SPOT"
-    weight = 1
-    base   = 0
-  }
-
   # Configuração de deployment
   deployment_maximum_percent         = 200
   deployment_minimum_healthy_percent = 100
@@ -181,12 +162,6 @@ resource "aws_ecs_service" "main" {
   # Configuração de auto scaling
   enable_ecs_managed_tags = true
   propagate_tags         = "SERVICE"
-
-  # Configuração de placement
-  ordered_placement_strategy {
-    type  = "spread"
-    field = "attribute:ecs.availability-zone"
-  }
 }
 
 resource "aws_security_group" "ecs_tasks" {
