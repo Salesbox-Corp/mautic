@@ -14,6 +14,7 @@ db_username = "${DB_USER}"
 
 # Configurações do ECR
 ecr_repository_url = "${ECR_REPO_URL}"
+ecr_exists         = "${ECR_EXISTS}"
 
 # Remover estas variáveis pois agora usamos VPC compartilhada
 # vpc_cidr   = "172.31.128.0/24"

@@ -89,13 +89,21 @@ resource "aws_iam_role" "ecs_task" {
   })
 }
 
-# Criar repositório ECR
+# Criar repositório ECR apenas se não existir
 resource "aws_ecr_repository" "mautic" {
+  count = var.ecr_exists == "true" ? 0 : 1
+  
   name = "mautic-${var.client}-${var.environment}"
   
   image_scanning_configuration {
     scan_on_push = true
   }
+}
+
+# Usar data source para repositório existente
+data "aws_ecr_repository" "existing_mautic" {
+  count = var.ecr_exists == "true" ? 1 : 0
+  name  = "mautic-${var.client}-${var.environment}"
 }
 
 module "ecs" {
@@ -117,7 +125,8 @@ module "ecs" {
   
   execution_role_arn = aws_iam_role.ecs_execution.arn
   task_role_arn      = aws_iam_role.ecs_task.arn
-  ecr_repository_url = aws_ecr_repository.mautic.repository_url
+  # Usar o URL do repositório apropriado com base na existência
+  ecr_repository_url = var.ecr_exists == "true" ? data.aws_ecr_repository.existing_mautic[0].repository_url : aws_ecr_repository.mautic[0].repository_url
 
   # Adicionar variáveis do banco de dados
   db_host     = var.db_host

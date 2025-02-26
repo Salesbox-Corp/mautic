@@ -24,6 +24,11 @@ on:
           - 'demo'
           - 'staging'
           - 'prd'
+      clean_resources:
+        description: 'Limpar recursos existentes antes de criar novos'
+        required: true
+        type: boolean
+        default: false
 
 env:
   AWS_REGION: ${{ github.event.inputs.aws_region }}
@@ -117,7 +122,8 @@ jobs:
           if ! ./scripts/setup-client.sh \
             ${{ github.event.inputs.client }} \
             ${{ github.event.inputs.environment }} \
-            ${{ env.AWS_REGION }}; then
+            ${{ env.AWS_REGION }} \
+            ${{ github.event.inputs.clean_resources }}; then
             echo "Erro durante o setup do cliente"
             exit 1
           fi

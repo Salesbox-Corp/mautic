@@ -75,4 +75,10 @@ variable "ecr_repository_url" {
   default     = null
 }
 
+variable "ecr_exists" {
+  description = "Indica se o repositório ECR já existe"
+  type        = string
+  default     = "false"
+}
+
 # ... outras variáveis necessárias ... 
