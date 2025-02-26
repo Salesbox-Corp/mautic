@@ -1,20 +1,71 @@
 #!/bin/bash
+set -e
 
 CLIENT=$1
 ENVIRONMENT=$2
+VERSION=${3:-latest}
+AWS_REGION=${4:-"us-east-2"}
 
 if [ -z "$CLIENT" ] || [ -z "$ENVIRONMENT" ]; then
-    echo "Usage: ./deploy-client.sh <client_name> <environment>"
+    echo "Usage: ./deploy-client.sh <client_name> <environment> [version] [aws_region]"
     exit 1
 fi
 
-# Navegar para o diretório correto
-cd terraform/environments/clients/$CLIENT/$ENVIRONMENT
+echo "Iniciando deploy para $CLIENT/$ENVIRONMENT na região $AWS_REGION..."
 
-# Inicializar e aplicar Terraform
-terraform init \
-    -backend-config="key=mautic/$CLIENT/$ENVIRONMENT/terraform.tfstate"
+# Definir variáveis
+ECR_REPOSITORY="mautic-${CLIENT}-${ENVIRONMENT}"
+ECS_CLUSTER="mautic-${CLIENT}-${ENVIRONMENT}-cluster"
+ECS_SERVICE="mautic-${CLIENT}-${ENVIRONMENT}-service"
 
-terraform apply \
-    -var="client=$CLIENT" \
-    -var="environment=$ENVIRONMENT" 
+# Obter o ID da conta AWS
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+ECR_REPOSITORY_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}"
+
+echo "Verificando se o repositório ECR existe..."
+if ! aws ecr describe-repositories --repository-names "${ECR_REPOSITORY}" --region "${AWS_REGION}" >/dev/null 2>&1; then
+    echo "Erro: Repositório ECR ${ECR_REPOSITORY} não encontrado"
+    echo "Verifique se a infraestrutura foi criada corretamente"
+    exit 1
+fi
+
+# Fazer login no ECR
+echo "Fazendo login no ECR..."
+aws ecr get-login-password --region "${AWS_REGION}" | docker login --username AWS --password-stdin "${ECR_REGISTRY}"
+
+# Construir a imagem Docker
+echo "Construindo imagem Docker..."
+docker build -t "${ECR_REPOSITORY_URI}:${VERSION}" -t "${ECR_REPOSITORY_URI}:latest" .
+
+# Enviar a imagem para o ECR
+echo "Enviando imagem para o ECR..."
+docker push "${ECR_REPOSITORY_URI}:${VERSION}"
+docker push "${ECR_REPOSITORY_URI}:latest"
+
+# Verificar se o cluster ECS existe
+echo "Verificando se o cluster ECS existe..."
+if ! aws ecs describe-clusters --clusters "${ECS_CLUSTER}" --region "${AWS_REGION}" --query 'clusters[0].status' --output text | grep -q ACTIVE; then
+    echo "Erro: Cluster ECS ${ECS_CLUSTER} não encontrado ou não está ativo"
+    echo "Verifique se a infraestrutura foi criada corretamente"
+    exit 1
+fi
+
+# Verificar se o serviço ECS existe
+echo "Verificando se o serviço ECS existe..."
+if ! aws ecs describe-services --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}" --region "${AWS_REGION}" --query 'services[0].status' --output text | grep -q ACTIVE; then
+    echo "Erro: Serviço ECS ${ECS_SERVICE} não encontrado ou não está ativo"
+    echo "Verifique se a infraestrutura foi criada corretamente"
+    exit 1
+fi
+
+# Forçar nova implantação do serviço ECS
+echo "Forçando nova implantação do serviço ECS..."
+aws ecs update-service --cluster "${ECS_CLUSTER}" --service "${ECS_SERVICE}" --force-new-deployment --region "${AWS_REGION}"
+
+# Aguardar até que a implantação seja concluída
+echo "Aguardando conclusão da implantação..."
+aws ecs wait services-stable --cluster "${ECS_CLUSTER}" --services "${ECS_SERVICE}" --region "${AWS_REGION}"
+
+echo "Deploy concluído com sucesso!"
+echo "Aplicação disponível em: http://$(aws elbv2 describe-load-balancers --names "mautic-${CLIENT}-${ENVIRONMENT}-alb" --region "${AWS_REGION}" --query 'LoadBalancers[0].DNSName' --output text)" 

@@ -7,13 +7,22 @@ on:
         description: 'Cliente para deploy'
         required: true
       environment:
-        description: 'Ambiente (demo/staging/prod)'
+        description: 'Ambiente (demo/staging/prd)'
         required: true
         default: 'demo'
       version:
         description: 'Versão para deploy'
         required: true
         default: 'latest'
+      aws_region:
+        description: 'AWS Region para recursos'
+        required: true
+        default: 'us-east-2'
+        type: choice
+        options:
+          - 'us-east-2'  # Ohio (recomendado)
+          - 'us-east-1'  # Virginia
+          - 'us-west-2'  # Oregon
 
 jobs:
   prepare:
@@ -22,12 +31,16 @@ jobs:
       should_deploy: ${{ steps.check.outputs.should_deploy }}
       client: ${{ steps.extract.outputs.client }}
       environment: ${{ steps.extract.outputs.environment }}
+      version: ${{ steps.extract.outputs.version }}
+      aws_region: ${{ steps.extract.outputs.aws_region }}
     steps:
       - id: extract
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "client=${{ github.event.inputs.client }}" >> $GITHUB_OUTPUT
             echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            echo "aws_region=${{ github.event.inputs.aws_region }}" >> $GITHUB_OUTPUT
           else
             BRANCH=${{ github.ref }}
             if [[ $BRANCH == refs/heads/clients/* ]]; then
@@ -35,6 +48,8 @@ jobs:
               ENV=$(echo $BRANCH | cut -d'/' -f4)
               echo "client=$CLIENT" >> $GITHUB_OUTPUT
               echo "environment=$ENV" >> $GITHUB_OUTPUT
+              echo "version=latest" >> $GITHUB_OUTPUT
+              echo "aws_region=us-east-2" >> $GITHUB_OUTPUT
             fi
           fi
 
@@ -59,6 +74,8 @@ jobs:
         run: |
           echo "CLIENT=${{ needs.prepare.outputs.client }}" >> $GITHUB_ENV
           echo "ENVIRONMENT=${{ needs.prepare.outputs.environment }}" >> $GITHUB_ENV
+          echo "VERSION=${{ needs.prepare.outputs.version }}" >> $GITHUB_ENV
+          echo "AWS_REGION=${{ needs.prepare.outputs.aws_region }}" >> $GITHUB_ENV
           echo "ECR_REPOSITORY=mautic-${{ needs.prepare.outputs.client }}-${{ needs.prepare.outputs.environment }}" >> $GITHUB_ENV
 
       - name: Configure AWS credentials
@@ -68,6 +85,32 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
       - name: Build and Deploy
         run: |
-          ./scripts/deploy-client.sh $CLIENT $ENVIRONMENT 
+          ./scripts/deploy-client.sh $CLIENT $ENVIRONMENT $VERSION $AWS_REGION
+
+      - name: Verify Deployment
+        run: |
+          # Verificar se o serviço está estável
+          ECS_CLUSTER="mautic-${CLIENT}-${ENVIRONMENT}-cluster"
+          ECS_SERVICE="mautic-${CLIENT}-${ENVIRONMENT}-service"
+          
+          # Obter status do serviço
+          SERVICE_STATUS=$(aws ecs describe-services --cluster $ECS_CLUSTER --services $ECS_SERVICE --region $AWS_REGION --query 'services[0].status' --output text)
+          
+          if [ "$SERVICE_STATUS" != "ACTIVE" ]; then
+            echo "Erro: Serviço ECS não está ativo. Status atual: $SERVICE_STATUS"
+            exit 1
+          fi
+          
+          # Obter URL do load balancer
+          ALB_DNS=$(aws elbv2 describe-load-balancers --names "mautic-${CLIENT}-${ENVIRONMENT}-alb" --region $AWS_REGION --query 'LoadBalancers[0].DNSName' --output text)
+          
+          echo "Deployment verificado com sucesso!"
+          echo "Aplicação disponível em: http://$ALB_DNS" 
