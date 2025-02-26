@@ -23,6 +23,12 @@ RUN apt-get update && apt-get install -y \
     bcmath \
     sockets
 
+# Configurar PHP
+RUN echo "memory_limit=512M" > /usr/local/etc/php/conf.d/memory-limit.ini \
+    && echo "upload_max_filesize=128M" >> /usr/local/etc/php/conf.d/memory-limit.ini \
+    && echo "post_max_size=128M" >> /usr/local/etc/php/conf.d/memory-limit.ini \
+    && echo "max_execution_time=300" >> /usr/local/etc/php/conf.d/memory-limit.ini
+
 # Instalar Node.js e npm
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs
@@ -39,8 +45,8 @@ WORKDIR /var/www/html
 # Copiar arquivos do projeto
 COPY . .
 
-# Instalar dependências
-RUN composer install --no-dev --optimize-autoloader
+# Instalar dependências com mais memória para o Composer
+RUN php -d memory_limit=-1 /usr/bin/composer install --no-dev --optimize-autoloader
 
 # Configurar permissões
 RUN chown -R www-data:www-data .
