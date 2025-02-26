@@ -17,6 +17,11 @@ on:
       confirmation:
         description: 'Digite o nome do cliente para confirmar'
         required: true
+      force:
+        description: 'Forçar destruição mesmo com erros'
+        type: boolean
+        required: true
+        default: false
 
 env:
   AWS_REGION: ${{ github.event.inputs.aws_region }}
@@ -47,14 +52,35 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Destroy Client Infrastructure
+      - name: Get AWS Account ID
+        id: account
         run: |
           AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "account_id=${AWS_ACCOUNT_ID}" >> $GITHUB_OUTPUT
+
+      - name: Destroy Client Infrastructure
+        run: |
+          AWS_ACCOUNT_ID="${{ steps.account.outputs.account_id }}"
           BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
           CLIENT="${{ github.event.inputs.client }}"
           ENVIRONMENT="${{ github.event.inputs.environment }}"
 
           echo "Destruindo infraestrutura do cliente ${CLIENT}/${ENVIRONMENT}..."
+
+          # Primeiro parar os serviços ECS
+          CLUSTER_NAME="mautic-${CLIENT}-${ENVIRONMENT}-cluster"
+          SERVICES=$(aws ecs list-services --cluster $CLUSTER_NAME --query 'serviceArns[]' --output text || true)
+          if [ ! -z "$SERVICES" ]; then
+            echo "Parando serviços ECS..."
+            for SERVICE in $SERVICES; do
+              aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE --desired-count 0
+              aws ecs delete-service --cluster $CLUSTER_NAME --service $SERVICE --force || true
+            done
+            
+            # Aguardar serviços pararem
+            echo "Aguardando serviços pararem..."
+            sleep 30
+          fi
 
           # Destruir recursos do Terraform
           cd terraform/environments/clients/${CLIENT}/${ENVIRONMENT}
@@ -62,40 +88,74 @@ jobs:
             -backend-config="bucket=${BUCKET_NAME}" \
             -backend-config="key=clients/${CLIENT}/${ENVIRONMENT}/terraform.tfstate"
           
-          terraform destroy -auto-approve
+          terraform destroy -auto-approve || true
 
       - name: Cleanup Client Resources
+        if: always()
         run: |
           CLIENT="${{ github.event.inputs.client }}"
           ENVIRONMENT="${{ github.event.inputs.environment }}"
+          CLUSTER_NAME="mautic-${CLIENT}-${ENVIRONMENT}-cluster"
 
-          # Remover banco de dados do cliente
+          echo "Limpando recursos do cliente ${CLIENT}/${ENVIRONMENT}..."
+
+          # 1. Limpar ECS
+          echo "Limpando ECS..."
+          aws ecs delete-cluster --cluster $CLUSTER_NAME || true
+
+          # 2. Limpar Load Balancer
+          echo "Limpando Load Balancer..."
+          LB_ARN=$(aws elbv2 describe-load-balancers \
+            --query "LoadBalancers[?starts_with(LoadBalancerName, 'mautic-${CLIENT}-${ENVIRONMENT}')].LoadBalancerArn" \
+            --output text)
+          if [ ! -z "$LB_ARN" ]; then
+            aws elbv2 delete-load-balancer --load-balancer-arn $LB_ARN || true
+            sleep 30
+          fi
+
+          # 3. Limpar Target Groups
+          echo "Limpando Target Groups..."
+          TGS=$(aws elbv2 describe-target-groups \
+            --query "TargetGroups[?starts_with(TargetGroupName, 'mautic-${CLIENT}-${ENVIRONMENT}')].TargetGroupArn" \
+            --output text)
+          for TG in $TGS; do
+            aws elbv2 delete-target-group --target-group-arn $TG || true
+          done
+
+          # 4. Limpar banco de dados do cliente
+          echo "Limpando banco de dados..."
           RDS_CREDENTIALS=$(aws secretsmanager get-secret-value \
             --secret-id "/mautic/shared/rds/master" \
-            --query 'SecretString' --output text)
+            --query 'SecretString' --output text || true)
           
-          RDS_ENDPOINT=$(aws ssm get-parameter \
-            --name "/mautic/shared/rds/endpoint" \
-            --query "Parameter.Value" --output text)
-          
-          MASTER_USER=$(echo $RDS_CREDENTIALS | jq -r '.username')
-          MASTER_PASSWORD=$(echo $RDS_CREDENTIALS | jq -r '.password')
-          
-          DB_NAME="mautic_${CLIENT}_${ENVIRONMENT}"
-          DB_USER="${DB_NAME}_user"
-          
-          mysql -h $RDS_ENDPOINT -u $MASTER_USER -p${MASTER_PASSWORD} <<EOF
-          DROP DATABASE IF EXISTS ${DB_NAME};
-          DROP USER IF EXISTS '${DB_USER}'@'%';
-          FLUSH PRIVILEGES;
+          if [ ! -z "$RDS_CREDENTIALS" ]; then
+            RDS_ENDPOINT=$(aws ssm get-parameter \
+              --name "/mautic/shared/rds/endpoint" \
+              --query "Parameter.Value" --output text || true)
+            
+            if [ ! -z "$RDS_ENDPOINT" ]; then
+              MASTER_USER=$(echo $RDS_CREDENTIALS | jq -r '.username')
+              MASTER_PASSWORD=$(echo $RDS_CREDENTIALS | jq -r '.password')
+              
+              DB_NAME="mautic_${CLIENT}_${ENVIRONMENT}"
+              DB_USER="${DB_NAME}_user"
+              
+              mysql -h $RDS_ENDPOINT -u $MASTER_USER -p${MASTER_PASSWORD} <<EOF || true
+              DROP DATABASE IF EXISTS ${DB_NAME};
+              DROP USER IF EXISTS '${DB_USER}'@'%';
+              FLUSH PRIVILEGES;
 EOF
+            fi
+          fi
 
-          # Remover repositório ECR
+          # 5. Limpar repositório ECR
+          echo "Limpando ECR..."
           aws ecr delete-repository \
             --repository-name "mautic-${CLIENT}-${ENVIRONMENT}" \
             --force || true
 
-          # Remover secrets e parâmetros
+          # 6. Limpar secrets e parâmetros
+          echo "Limpando secrets e parâmetros..."
           aws secretsmanager delete-secret \
             --secret-id "/mautic/${CLIENT}/${ENVIRONMENT}/credentials" \
             --force-delete-without-recovery || true
@@ -106,6 +166,29 @@ EOF
               "/mautic/${CLIENT}/${ENVIRONMENT}/config/email_from" \
               "/mautic/${CLIENT}/${ENVIRONMENT}/database/name" \
               "/mautic/${CLIENT}/${ENVIRONMENT}/database/user" || true
+
+          # 7. Limpar Security Groups
+          echo "Limpando Security Groups..."
+          SG_IDS=$(aws ec2 describe-security-groups \
+            --filters "Name=group-name,Values=mautic-${CLIENT}-${ENVIRONMENT}-*" \
+            --query 'SecurityGroups[*].GroupId' --output text)
+          for SG in $SG_IDS; do
+            aws ec2 delete-security-group --group-id $SG || true
+          done
+
+          # 8. Limpar estado do Terraform
+          if [ "${{ github.event.inputs.force }}" == "true" ]; then
+            echo "Limpando estado do Terraform..."
+            AWS_ACCOUNT_ID="${{ steps.account.outputs.account_id }}"
+            BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
+            STATE_KEY="clients/${CLIENT}/${ENVIRONMENT}/terraform.tfstate"
+            
+            aws s3 rm "s3://${BUCKET_NAME}/${STATE_KEY}" || true
+            aws dynamodb delete-item \
+              --table-name mautic-terraform-lock \
+              --key "{\"LockID\":{\"S\":\"${STATE_KEY}\"}}" \
+              --region us-east-1 || true
+          fi
 
       - name: Notify Completion
         if: success()

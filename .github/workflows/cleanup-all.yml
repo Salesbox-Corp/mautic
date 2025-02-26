@@ -1,0 +1,272 @@
+name: Cleanup All Resources
+
+on:
+  workflow_dispatch:
+    inputs:
+      aws_region:
+        description: 'AWS Region (ex: us-east-2)'
+        required: true
+        default: 'us-east-2'
+      confirmation:
+        description: 'Digite CLEANUP-ALL para confirmar'
+        required: true
+      force:
+        description: 'Forçar limpeza mesmo com erros'
+        type: boolean
+        required: true
+        default: false
+
+env:
+  AWS_REGION: ${{ github.event.inputs.aws_region }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Confirmation
+        if: inputs.confirmation != 'CLEANUP-ALL'
+        run: |
+          echo "Erro: Confirmação incorreta"
+          exit 1
+
+  cleanup_clients:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get Client List
+        id: clients
+        run: |
+          # Listar todos os clusters ECS (formato: mautic-CLIENTE-AMBIENTE-cluster)
+          CLUSTERS=$(aws ecs list-clusters --query 'clusterArns[]' --output text || echo "")
+          
+          # Extrair lista única de clientes e ambientes
+          CLIENTS_ENV=""
+          for CLUSTER in $CLUSTERS; do
+            if [[ $CLUSTER == *"mautic-"* ]]; then
+              # Extrair cliente e ambiente do nome do cluster
+              NAME=$(echo $CLUSTER | rev | cut -d'/' -f1 | rev)
+              CLIENT_ENV=$(echo $NAME | sed -E 's/mautic-([^-]+)-([^-]+)-cluster/\1 \2/')
+              CLIENTS_ENV="$CLIENTS_ENV$CLIENT_ENV"$'\n'
+            fi
+          done
+          
+          # Remover linhas vazias e duplicatas
+          CLIENTS_ENV=$(echo "$CLIENTS_ENV" | sort -u | grep -v '^$' || echo "")
+          
+          # Formatar para JSON
+          CLIENTS_JSON="["
+          while read -r line; do
+            if [ ! -z "$line" ]; then
+              CLIENT=$(echo $line | cut -d' ' -f1)
+              ENV=$(echo $line | cut -d' ' -f2)
+              CLIENTS_JSON="$CLIENTS_JSON{\"client\":\"$CLIENT\",\"environment\":\"$ENV\"},"
+            fi
+          done <<< "$CLIENTS_ENV"
+          CLIENTS_JSON="${CLIENTS_JSON%,}]"
+          
+          echo "clients=$CLIENTS_JSON" >> $GITHUB_OUTPUT
+
+      - name: Destroy Clients
+        if: fromJson(steps.clients.outputs.clients)[0] != null
+        run: |
+          CLIENTS='${{ steps.clients.outputs.clients }}'
+          
+          for CLIENT in $(echo $CLIENTS | jq -r '.[] | "\(.client) \(.environment)"'); do
+            CLIENT_NAME=$(echo $CLIENT | cut -d' ' -f1)
+            CLIENT_ENV=$(echo $CLIENT | cut -d' ' -f2)
+            
+            echo "Destruindo cliente ${CLIENT_NAME}/${CLIENT_ENV}..."
+            
+            # Chamar workflow de destruição do cliente
+            gh workflow run destroy-client.yml \
+              -f aws_region=${{ env.AWS_REGION }} \
+              -f client=$CLIENT_NAME \
+              -f environment=$CLIENT_ENV \
+              -f confirmation=$CLIENT_NAME \
+              -f force=true
+            
+            # Aguardar workflow completar
+            sleep 30
+            
+            # Verificar status do workflow
+            RUN_ID=$(gh run list --workflow=destroy-client.yml --limit=1 --json databaseId --jq '.[0].databaseId')
+            gh run watch $RUN_ID || true
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  cleanup_base:
+    needs: cleanup_clients
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Destroy Base Infrastructure
+        run: |
+          # Chamar workflow de destruição da infra base
+          gh workflow run destroy-base-infra.yml \
+            -f aws_region=${{ env.AWS_REGION }} \
+            -f confirmation=DESTROY-BASE-INFRA \
+            -f force=true
+          
+          # Aguardar workflow completar
+          sleep 30
+          
+          # Verificar status do workflow
+          RUN_ID=$(gh run list --workflow=destroy-base-infra.yml --limit=1 --json databaseId --jq '.[0].databaseId')
+          gh run watch $RUN_ID || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  cleanup_remaining:
+    needs: cleanup_base
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Final Cleanup
+        run: |
+          echo "Executando limpeza final de recursos..."
+
+          # 1. Limpar ECS
+          echo "Limpando ECS..."
+          for CLUSTER in $(aws ecs list-clusters --query 'clusterArns[]' --output text); do
+            if [[ $CLUSTER == *"mautic-"* ]]; then
+              # Parar todas as tasks
+              TASKS=$(aws ecs list-tasks --cluster $CLUSTER --query 'taskArns[*]' --output text)
+              for TASK in $TASKS; do
+                aws ecs stop-task --cluster $CLUSTER --task $TASK || true
+              done
+              
+              # Remover serviços
+              SERVICES=$(aws ecs list-services --cluster $CLUSTER --query 'serviceArns[*]' --output text)
+              for SERVICE in $SERVICES; do
+                aws ecs update-service --cluster $CLUSTER --service $SERVICE --desired-count 0
+                aws ecs delete-service --cluster $CLUSTER --service $SERVICE --force || true
+              done
+              
+              # Remover cluster
+              aws ecs delete-cluster --cluster $CLUSTER || true
+            fi
+          done
+
+          # 2. Limpar Load Balancers
+          echo "Limpando Load Balancers..."
+          for ALB in $(aws elbv2 describe-load-balancers --query 'LoadBalancers[?starts_with(LoadBalancerName, `mautic-`)].LoadBalancerArn' --output text); do
+            aws elbv2 delete-load-balancer --load-balancer-arn $ALB || true
+          done
+          
+          # Aguardar ALBs serem deletados
+          sleep 30
+          
+          # Limpar target groups
+          for TG in $(aws elbv2 describe-target-groups --query 'TargetGroups[?starts_with(TargetGroupName, `mautic-`)].TargetGroupArn' --output text); do
+            aws elbv2 delete-target-group --target-group-arn $TG || true
+          done
+
+          # 3. Limpar ECR
+          echo "Limpando ECR..."
+          for REPO in $(aws ecr describe-repositories --query 'repositories[?starts_with(repositoryName, `mautic-`)].repositoryName' --output text); do
+            aws ecr delete-repository --repository-name $REPO --force || true
+          done
+
+          # 4. Limpar RDS
+          echo "Limpando RDS..."
+          for DB in $(aws rds describe-db-instances --query 'DBInstances[?starts_with(DBInstanceIdentifier, `mautic-`)].DBInstanceIdentifier' --output text); do
+            aws rds delete-db-instance \
+              --db-instance-identifier $DB \
+              --skip-final-snapshot \
+              --delete-automated-backups || true
+          done
+
+          # 5. Limpar Security Groups
+          echo "Limpando Security Groups..."
+          for SG in $(aws ec2 describe-security-groups --filters "Name=group-name,Values=mautic-*" --query 'SecurityGroups[*].GroupId' --output text); do
+            aws ec2 delete-security-group --group-id $SG || true
+          done
+
+          # 6. Limpar VPC
+          echo "Limpando VPC..."
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Name,Values=mautic-shared-vpc" \
+            --query 'Vpcs[0].VpcId' --output text)
+
+          if [ "$VPC_ID" != "None" ]; then
+            # 6.1 Remover Internet Gateway
+            IGW_ID=$(aws ec2 describe-internet-gateways \
+              --filters "Name=attachment.vpc-id,Values=${VPC_ID}" \
+              --query 'InternetGateways[0].InternetGatewayId' --output text)
+            if [ ! -z "$IGW_ID" ]; then
+              aws ec2 detach-internet-gateway --internet-gateway-id $IGW_ID --vpc-id $VPC_ID
+              aws ec2 delete-internet-gateway --internet-gateway-id $IGW_ID
+            fi
+
+            # 6.2 Remover Subnets
+            for SUBNET in $(aws ec2 describe-subnets \
+              --filters "Name=vpc-id,Values=${VPC_ID}" \
+              --query 'Subnets[*].SubnetId' --output text); do
+              aws ec2 delete-subnet --subnet-id $SUBNET || true
+            done
+
+            # 6.3 Remover VPC
+            aws ec2 delete-vpc --vpc-id $VPC_ID || true
+          fi
+
+          # 7. Limpar Secrets e Parameters
+          echo "Limpando Secrets..."
+          for SECRET in $(aws secretsmanager list-secrets --query 'SecretList[?starts_with(Name, `/mautic/`)].Name' --output text); do
+            aws secretsmanager delete-secret \
+              --secret-id $SECRET \
+              --force-delete-without-recovery || true
+          done
+
+          echo "Limpando Parameters..."
+          aws ssm delete-parameters \
+            --names $(aws ssm describe-parameters \
+              --parameter-filters "Key=Name,Values=/mautic/,Option=BeginsWith" \
+              --query 'Parameters[*].Name' --output text) || true
+
+          # 8. Limpar estado do Terraform
+          if [ "${{ github.event.inputs.force }}" == "true" ]; then
+            echo "Limpando estado do Terraform..."
+            AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
+            
+            # Remover bucket do Terraform state
+            aws s3 rm s3://${BUCKET_NAME} --recursive || true
+            aws s3api delete-bucket --bucket ${BUCKET_NAME} || true
+            
+            # Remover tabela do DynamoDB
+            aws dynamodb delete-table \
+              --table-name mautic-terraform-lock \
+              --region us-east-1 || true
+          fi
+
+      - name: Notify Completion
+        if: success()
+        run: |
+          echo "Limpeza completa finalizada com sucesso" 

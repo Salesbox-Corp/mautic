@@ -33,8 +33,8 @@ locals {
   vpc_id = tolist(data.aws_vpcs.shared.ids)[0]
 }
 
-# Buscar subnets privadas
-data "aws_subnets" "private" {
+# Buscar subnets públicas ao invés das privadas
+data "aws_subnets" "public" {
   filter {
     name   = "vpc-id"
     values = [local.vpc_id]
@@ -42,7 +42,7 @@ data "aws_subnets" "private" {
 
   filter {
     name   = "tag:Type"
-    values = ["private"]
+    values = ["public"]  # Alterado de private para public
   }
 
   filter {
@@ -118,15 +118,15 @@ module "ecs" {
   task_cpu          = var.task_cpu
   task_memory       = var.task_memory
   vpc_id            = local.vpc_id
-  subnet_ids        = data.aws_subnets.private.ids
+  subnet_ids        = data.aws_subnets.public.ids  # Alterado para usar subnets públicas
   tags              = module.naming.tags
   client            = var.client
   environment       = var.environment
   
   execution_role_arn = aws_iam_role.ecs_execution.arn
   task_role_arn      = aws_iam_role.ecs_task.arn
-  # Usar o URL do repositório apropriado com base na existência
   ecr_repository_url = var.ecr_exists == "true" ? data.aws_ecr_repository.existing_mautic[0].repository_url : aws_ecr_repository.mautic[0].repository_url
+  security_groups    = [aws_security_group.ecs_tasks.id]
 
   # Adicionar variáveis do banco de dados
   db_host     = var.db_host
@@ -247,4 +247,18 @@ resource "aws_iam_role_policy" "ecs_task_permissions" {
       }
     ]
   })
+}
+
+# Security Group para tasks do ECS
+resource "aws_security_group" "ecs_tasks" {
+  name        = "${module.naming.prefix}-ecs-tasks"
+  description = "Security group for ECS tasks"
+  vpc_id      = local.vpc_id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 } 

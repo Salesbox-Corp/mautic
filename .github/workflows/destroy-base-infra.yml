@@ -11,7 +11,7 @@ on:
         description: 'Digite DESTROY-BASE-INFRA para confirmar'
         required: true
       force:
-        description: 'Forçar destruição mesmo com clientes ativos?'
+        description: 'Forçar destruição mesmo com clientes ativos'
         type: boolean
         required: true
         default: false
@@ -51,21 +51,25 @@ jobs:
           # Verificar se existem bancos de dados de clientes
           RDS_CREDENTIALS=$(aws secretsmanager get-secret-value \
             --secret-id "/mautic/shared/rds/master" \
-            --query 'SecretString' --output text)
+            --query 'SecretString' --output text || true)
           
-          RDS_ENDPOINT=$(aws ssm get-parameter \
-            --name "/mautic/shared/rds/endpoint" \
-            --query "Parameter.Value" --output text)
-          
-          MASTER_USER=$(echo $RDS_CREDENTIALS | jq -r '.username')
-          MASTER_PASSWORD=$(echo $RDS_CREDENTIALS | jq -r '.password')
-          
-          DB_COUNT=$(mysql -h $RDS_ENDPOINT -u $MASTER_USER -p${MASTER_PASSWORD} \
-            -N -e "SHOW DATABASES LIKE 'mautic_%';" | wc -l)
-          
-          if [ "$DB_COUNT" -gt 1 ]; then
-            echo "Erro: Existem bancos de dados de clientes. Destrua os ambientes dos clientes primeiro."
-            exit 1
+          if [ ! -z "$RDS_CREDENTIALS" ]; then
+            RDS_ENDPOINT=$(aws ssm get-parameter \
+              --name "/mautic/shared/rds/endpoint" \
+              --query "Parameter.Value" --output text || true)
+            
+            if [ ! -z "$RDS_ENDPOINT" ]; then
+              MASTER_USER=$(echo $RDS_CREDENTIALS | jq -r '.username')
+              MASTER_PASSWORD=$(echo $RDS_CREDENTIALS | jq -r '.password')
+              
+              DB_COUNT=$(mysql -h $RDS_ENDPOINT -u $MASTER_USER -p${MASTER_PASSWORD} \
+                -N -e "SHOW DATABASES LIKE 'mautic_%';" | wc -l || echo "0")
+              
+              if [ "$DB_COUNT" -gt 1 ]; then
+                echo "Erro: Existem bancos de dados de clientes. Destrua os ambientes dos clientes primeiro."
+                exit 1
+              fi
+            fi
           fi
 
   destroy:
@@ -84,9 +88,15 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Destroy Base Infrastructure
+      - name: Get AWS Account ID
+        id: account
         run: |
           AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "account_id=${AWS_ACCOUNT_ID}" >> $GITHUB_OUTPUT
+
+      - name: Destroy Base Infrastructure
+        run: |
+          AWS_ACCOUNT_ID="${{ steps.account.outputs.account_id }}"
           BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
 
           echo "Destruindo infraestrutura base..."
@@ -96,29 +106,91 @@ jobs:
             -backend-config="bucket=${BUCKET_NAME}" \
             -backend-config="key=base/terraform.tfstate"
           
-          terraform destroy -auto-approve
+          terraform destroy -auto-approve || true
 
       - name: Cleanup Shared Resources
+        if: always()
         run: |
-          # Remover secrets compartilhados
+          echo "Limpando recursos compartilhados..."
+
+          # 1. Limpar RDS
+          echo "Limpando RDS..."
+          DB_INSTANCE="mautic-shared-db"
+          aws rds delete-db-instance \
+            --db-instance-identifier $DB_INSTANCE \
+            --skip-final-snapshot \
+            --delete-automated-backups || true
+
+          # Aguardar RDS ser deletado
+          echo "Aguardando RDS ser removido..."
+          aws rds wait db-instance-deleted \
+            --db-instance-identifier $DB_INSTANCE || true
+
+          # 2. Limpar VPC e recursos relacionados
+          echo "Limpando VPC..."
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Name,Values=mautic-shared-vpc" \
+            --query 'Vpcs[0].VpcId' --output text)
+
+          if [ "$VPC_ID" != "None" ]; then
+            # 2.1 Remover Security Groups
+            echo "Removendo Security Groups..."
+            SG_IDS=$(aws ec2 describe-security-groups \
+              --filters "Name=vpc-id,Values=${VPC_ID}" \
+              --query 'SecurityGroups[?GroupName!=`default`].GroupId' --output text)
+            for SG in $SG_IDS; do
+              aws ec2 delete-security-group --group-id $SG || true
+            done
+
+            # 2.2 Remover Internet Gateway
+            echo "Removendo Internet Gateway..."
+            IGW_ID=$(aws ec2 describe-internet-gateways \
+              --filters "Name=attachment.vpc-id,Values=${VPC_ID}" \
+              --query 'InternetGateways[0].InternetGatewayId' --output text)
+            if [ ! -z "$IGW_ID" ]; then
+              aws ec2 detach-internet-gateway --internet-gateway-id $IGW_ID --vpc-id $VPC_ID
+              aws ec2 delete-internet-gateway --internet-gateway-id $IGW_ID
+            fi
+
+            # 2.3 Remover Subnets
+            echo "Removendo Subnets..."
+            SUBNET_IDS=$(aws ec2 describe-subnets \
+              --filters "Name=vpc-id,Values=${VPC_ID}" \
+              --query 'Subnets[*].SubnetId' --output text)
+            for SUBNET in $SUBNET_IDS; do
+              aws ec2 delete-subnet --subnet-id $SUBNET || true
+            done
+
+            # 2.4 Finalmente remover a VPC
+            aws ec2 delete-vpc --vpc-id $VPC_ID || true
+          fi
+
+          # 3. Limpar Secrets e Parameters
+          echo "Limpando Secrets e Parameters..."
           aws secretsmanager delete-secret \
             --secret-id "/mautic/shared/rds/master" \
             --force-delete-without-recovery || true
 
-          # Remover parâmetros compartilhados
           aws ssm delete-parameters \
-            --names "/mautic/shared/rds/endpoint" || true
+            --names \
+              "/mautic/shared/rds/endpoint" \
+              "/mautic/shared/vpc/id" \
+              "/mautic/shared/vpc/subnet_ids" || true
 
-          # Remover bucket do Terraform state (opcional)
+          # 4. Limpar estado do Terraform
           if [ "${{ github.event.inputs.force }}" == "true" ]; then
-            AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            echo "Limpando estado do Terraform..."
+            AWS_ACCOUNT_ID="${{ steps.account.outputs.account_id }}"
             BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
             
-            aws s3 rm s3://${BUCKET_NAME} --recursive
-            aws s3api delete-bucket --bucket ${BUCKET_NAME}
+            # Remover bucket do Terraform state
+            aws s3 rm s3://${BUCKET_NAME} --recursive || true
+            aws s3api delete-bucket --bucket ${BUCKET_NAME} || true
             
             # Remover tabela do DynamoDB
-            aws dynamodb delete-table --table-name mautic-terraform-lock
+            aws dynamodb delete-table \
+              --table-name mautic-terraform-lock \
+              --region us-east-1 || true
           fi
 
       - name: Notify Completion

@@ -10,6 +10,11 @@ on:
       confirmation:
         description: 'Digite CLEANUP-MAUTIC para confirmar'
         required: true
+      force:
+        description: 'Forçar limpeza mesmo com erros'
+        type: boolean
+        required: true
+        default: false
 
 env:
   AWS_REGION: ${{ github.event.inputs.aws_region }}
@@ -31,209 +36,247 @@ jobs:
           echo "Erro: Confirmação incorreta"
           exit 1
 
-      - name: Cleanup ECS Resources
+      - name: Cleanup Resources
         run: |
-          echo "Limpando recursos ECS..."
-          
-          # Listar e deletar clusters que começam com mautic-
-          for CLUSTER in $(aws ecs list-clusters --query 'clusterArns[*]' --output text | grep 'mautic-'); do
-            # Primeiro, parar todas as tasks
-            TASKS=$(aws ecs list-tasks --cluster $CLUSTER --query 'taskArns[*]' --output text)
-            if [ ! -z "$TASKS" ]; then
-              aws ecs stop-task --cluster $CLUSTER --task $TASKS
-            fi
-            
-            # Atualizar serviços para desired count 0
-            SERVICES=$(aws ecs list-services --cluster $CLUSTER --query 'serviceArns[*]' --output text)
-            if [ ! -z "$SERVICES" ]; then
-              for SERVICE in $SERVICES; do
-                aws ecs update-service --cluster $CLUSTER --service $SERVICE --desired-count 0
-                aws ecs delete-service --cluster $CLUSTER --service $SERVICE --force
+          echo "Iniciando limpeza dos recursos Mautic..."
+
+          # 1. Parar e remover serviços ECS
+          echo "Limpando ECS..."
+          for CLUSTER in $(aws ecs list-clusters --query 'clusterArns[]' --output text || echo ""); do
+            if [[ $CLUSTER == *"mautic-"* ]]; then
+              echo "Processando cluster: $CLUSTER"
+              
+              # 1.1 Parar todas as tasks
+              TASKS=$(aws ecs list-tasks --cluster $CLUSTER --query 'taskArns[*]' --output text || echo "")
+              for TASK in $TASKS; do
+                echo "Parando task: $TASK"
+                aws ecs stop-task --cluster $CLUSTER --task $TASK || true
               done
+              
+              # 1.2 Remover serviços
+              SERVICES=$(aws ecs list-services --cluster $CLUSTER --query 'serviceArns[*]' --output text || echo "")
+              for SERVICE in $SERVICES; do
+                echo "Removendo serviço: $SERVICE"
+                aws ecs update-service --cluster $CLUSTER --service $SERVICE --desired-count 0
+                aws ecs delete-service --cluster $CLUSTER --service $SERVICE --force || true
+              done
+              
+              # Aguardar serviços serem removidos
+              echo "Aguardando serviços serem removidos..."
+              sleep 30
+              
+              # 1.3 Remover cluster
+              echo "Removendo cluster: $CLUSTER"
+              aws ecs delete-cluster --cluster $CLUSTER || true
             fi
-            
-            # Deletar o cluster
-            aws ecs delete-cluster --cluster $CLUSTER
           done
 
-      - name: Cleanup Load Balancers
-        run: |
+          # 2. Remover Load Balancers e Target Groups
           echo "Limpando Load Balancers..."
           
-          # Listar e deletar ALBs que começam com mautic-
-          for ALB in $(aws elbv2 describe-load-balancers --query 'LoadBalancers[?starts_with(LoadBalancerName, `mautic-`)].LoadBalancerArn' --output text); do
-            # Primeiro deletar os listeners
-            LISTENERS=$(aws elbv2 describe-listeners --load-balancer-arn $ALB --query 'Listeners[*].ListenerArn' --output text)
+          # 2.1 Primeiro remover listeners
+          for ALB in $(aws elbv2 describe-load-balancers --query 'LoadBalancers[?starts_with(LoadBalancerName, `mautic-`)].LoadBalancerArn' --output text || echo ""); do
+            echo "Removendo listeners do ALB: $ALB"
+            LISTENERS=$(aws elbv2 describe-listeners --load-balancer-arn $ALB --query 'Listeners[*].ListenerArn' --output text || echo "")
             for LISTENER in $LISTENERS; do
-              aws elbv2 delete-listener --listener-arn $LISTENER
+              aws elbv2 delete-listener --listener-arn $LISTENER || true
             done
-            
-            # Depois deletar o ALB
-            aws elbv2 delete-load-balancer --load-balancer-arn $ALB
           done
           
-          # Aguardar ALBs serem deletados
-          sleep 30
-          
-          # Deletar target groups
-          for TG in $(aws elbv2 describe-target-groups --query 'TargetGroups[?starts_with(TargetGroupName, `mautic-`)].TargetGroupArn' --output text); do
-            aws elbv2 delete-target-group --target-group-arn $TG
+          # 2.2 Depois remover os ALBs
+          for ALB in $(aws elbv2 describe-load-balancers --query 'LoadBalancers[?starts_with(LoadBalancerName, `mautic-`)].LoadBalancerArn' --output text || echo ""); do
+            echo "Removendo ALB: $ALB"
+            aws elbv2 delete-load-balancer --load-balancer-arn $ALB || true
           done
-
-      - name: Cleanup ECR Repositories
-        run: |
-          echo "Limpando repositórios ECR..."
           
-          # Listar e deletar repositórios que começam com mautic-
-          for REPO in $(aws ecr describe-repositories --query 'repositories[?starts_with(repositoryName, `mautic-`)].repositoryName' --output text); do
-            aws ecr delete-repository --repository-name $REPO --force
+          # Aguardar ALBs serem removidos
+          echo "Aguardando ALBs serem removidos..."
+          sleep 60
+          
+          # 2.3 Por fim, remover target groups
+          echo "Removendo Target Groups..."
+          for TG in $(aws elbv2 describe-target-groups --query 'TargetGroups[?starts_with(TargetGroupName, `mautic-`)].TargetGroupArn' --output text || echo ""); do
+            echo "Removendo Target Group: $TG"
+            aws elbv2 delete-target-group --target-group-arn $TG || true
           done
 
-      - name: Cleanup Security Groups
-        run: |
+          # 3. Remover repositórios ECR
+          echo "Limpando ECR..."
+          for REPO in $(aws ecr describe-repositories --query 'repositories[?starts_with(repositoryName, `mautic-`)].repositoryName' --output text || echo ""); do
+            echo "Removendo repositório ECR: $REPO"
+            # Primeiro remover todas as imagens
+            IMAGES=$(aws ecr list-images --repository-name $REPO --query 'imageIds[*]' --output json || echo "[]")
+            if [ "$IMAGES" != "[]" ]; then
+              aws ecr batch-delete-image --repository-name $REPO --image-ids "$IMAGES" || true
+            fi
+            # Depois remover o repositório
+            aws ecr delete-repository --repository-name $REPO --force || true
+          done
+
+          # 4. Remover Security Groups
           echo "Limpando Security Groups..."
           
-          # Listar security groups que começam com mautic-
-          for SG in $(aws ec2 describe-security-groups --filters "Name=group-name,Values=mautic-*" --query 'SecurityGroups[*].GroupId' --output text); do
+          # 4.1 Primeiro remover as regras entre os security groups
+          for SG in $(aws ec2 describe-security-groups --filters "Name=group-name,Values=mautic-*" --query 'SecurityGroups[*].GroupId' --output text || echo ""); do
+            echo "Removendo regras do Security Group: $SG"
+            # Remover regras de entrada
+            aws ec2 revoke-security-group-ingress --group-id $SG \
+              --protocol all --source-group $SG --port -1 || true
+            # Remover regras de saída
+            aws ec2 revoke-security-group-egress --group-id $SG \
+              --protocol all --port -1 --cidr 0.0.0.0/0 || true
+          done
+          
+          # 4.2 Depois remover os security groups
+          for SG in $(aws ec2 describe-security-groups --filters "Name=group-name,Values=mautic-*" --query 'SecurityGroups[*].GroupId' --output text || echo ""); do
+            echo "Removendo Security Group: $SG"
             aws ec2 delete-security-group --group-id $SG || true
           done
 
-      - name: Cleanup VPC Resources
-        run: |
-          echo "Limpando recursos de VPC..."
+          # 5. Remover RDS
+          echo "Limpando RDS..."
           
-          # Encontrar VPC com tag mautic-shared-vpc
-          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=mautic-shared-vpc" --query 'Vpcs[0].VpcId' --output text)
+          # 5.1 Primeiro fazer snapshot final se necessário
+          if [ "${{ github.event.inputs.force }}" != "true" ]; then
+            for DB in $(aws rds describe-db-instances --query 'DBInstances[?starts_with(DBInstanceIdentifier, `mautic-`)].DBInstanceIdentifier' --output text || echo ""); do
+              FINAL_SNAPSHOT="$DB-final-$(date +%Y%m%d-%H%M%S)"
+              echo "Criando snapshot final para $DB: $FINAL_SNAPSHOT"
+              aws rds delete-db-instance \
+                --db-instance-identifier $DB \
+                --final-db-snapshot-identifier $FINAL_SNAPSHOT || true
+            done
+          else
+            # Se forçado, remover sem snapshot
+            for DB in $(aws rds describe-db-instances --query 'DBInstances[?starts_with(DBInstanceIdentifier, `mautic-`)].DBInstanceIdentifier' --output text || echo ""); do
+              echo "Removendo RDS sem snapshot: $DB"
+              aws rds delete-db-instance \
+                --db-instance-identifier $DB \
+                --skip-final-snapshot \
+                --delete-automated-backups || true
+            done
+          fi
           
-          if [ "$VPC_ID" != "None" ]; then
-            echo "Encontrada VPC: $VPC_ID"
+          # Aguardar RDS ser removido
+          echo "Aguardando RDS ser removido..."
+          sleep 300
 
-            # 1. Primeiro remover ECS Services e Tasks
-            echo "Removendo ECS resources..."
-            for CLUSTER in $(aws ecs list-clusters --query 'clusterArns[*]' --output text | grep 'mautic-'); do
-              for SERVICE in $(aws ecs list-services --cluster $CLUSTER --query 'serviceArns[*]' --output text); do
-                aws ecs update-service --cluster $CLUSTER --service $SERVICE --desired-count 0
-                aws ecs delete-service --cluster $CLUSTER --service $SERVICE --force
-              done
-              aws ecs delete-cluster --cluster $CLUSTER
-            done
+          # 5.2 Remover parameter groups
+          echo "Removendo Parameter Groups..."
+          for PG in $(aws rds describe-db-parameter-groups --query 'DBParameterGroups[?starts_with(DBParameterGroupName, `mautic-`)].DBParameterGroupName' --output text || echo ""); do
+            aws rds delete-db-parameter-group --db-parameter-group-name $PG || true
+          done
+          
+          # 5.3 Remover subnet groups
+          echo "Removendo Subnet Groups..."
+          for SG in $(aws rds describe-db-subnet-groups --query 'DBSubnetGroups[?starts_with(DBSubnetGroupName, `mautic-`)].DBSubnetGroupName' --output text || echo ""); do
+            aws rds delete-db-subnet-group --db-subnet-group-name $SG || true
+          done
 
-            # 2. Remover Load Balancers
-            echo "Removendo Load Balancers..."
-            for ALB in $(aws elbv2 describe-load-balancers --query 'LoadBalancers[?starts_with(LoadBalancerName, `mautic-`)].LoadBalancerArn' --output text); do
-              aws elbv2 delete-load-balancer --load-balancer-arn $ALB
-            done
+          # 6. Limpar VPC e recursos relacionados
+          echo "Limpando VPC..."
+          VPC_ID=$(aws ec2 describe-vpcs \
+            --filters "Name=tag:Name,Values=mautic-shared-vpc" \
+            --query 'Vpcs[0].VpcId' --output text || echo "")
+
+          if [ "$VPC_ID" != "None" ] && [ ! -z "$VPC_ID" ]; then
+            echo "Processando VPC: $VPC_ID"
             
-            # Aguardar ALBs serem deletados
-            echo "Aguardando ALBs serem removidos..."
-            sleep 30
-
-            # 3. Remover Target Groups
-            echo "Removendo Target Groups..."
-            for TG in $(aws elbv2 describe-target-groups --query 'TargetGroups[?starts_with(TargetGroupName, `mautic-`)].TargetGroupArn' --output text); do
-              aws elbv2 delete-target-group --target-group-arn $TG
-            done
-
-            # 4. Remover RDS Instances
-            echo "Removendo RDS Instances..."
-            for DB in $(aws rds describe-db-instances --query 'DBInstances[?starts_with(DBInstanceIdentifier, `mautic-`)].DBInstanceIdentifier' --output text); do
-              aws rds delete-db-instance --db-instance-identifier $DB --skip-final-snapshot --delete-automated-backups || true
-            done
-
-            # Aguardar RDS ser deletado
-            echo "Aguardando RDS ser removido..."
-            sleep 300  # 5 minutos para garantir que o RDS foi deletado
-
-            # 5. Remover RDS Subnet Groups e Parameter Groups
-            echo "Removendo RDS Subnet Groups e Parameter Groups..."
-            for SG in $(aws rds describe-db-subnet-groups --query 'DBSubnetGroups[?starts_with(DBSubnetGroupName, `mautic-`)].DBSubnetGroupName' --output text); do
-              aws rds delete-db-subnet-group --db-subnet-group-name $SG || true
-            done
-
-            for PG in $(aws rds describe-db-parameter-groups --query 'DBParameterGroups[?starts_with(DBParameterGroupName, `mautic-`)].DBParameterGroupName' --output text); do
-              aws rds delete-db-parameter-group --db-parameter-group-name $PG || true
-            done
-
-            # 6. Remover ENIs
+            # 6.1 Remover ENIs
             echo "Removendo Network Interfaces..."
-            for ENI in $(aws ec2 describe-network-interfaces --filters "Name=vpc-id,Values=$VPC_ID" --query 'NetworkInterfaces[*].NetworkInterfaceId' --output text); do
+            for ENI in $(aws ec2 describe-network-interfaces --filters "Name=vpc-id,Values=${VPC_ID}" --query 'NetworkInterfaces[*].NetworkInterfaceId' --output text || echo ""); do
+              echo "Removendo ENI: $ENI"
               aws ec2 delete-network-interface --network-interface-id $ENI || true
             done
-
-            # 7. Remover EFS Mount Targets
-            echo "Removendo EFS Mount Targets..."
-            for EFS in $(aws efs describe-file-systems --query 'FileSystems[?contains(Tags[?Key==`Name`].Value, `mautic`)].FileSystemId' --output text); do
-              for MT in $(aws efs describe-mount-targets --file-system-id $EFS --query 'MountTargets[*].MountTargetId' --output text); do
-                aws efs delete-mount-target --mount-target-id $MT
-              done
-              # Aguardar mount targets serem deletados
-              sleep 30
-              aws efs delete-file-system --file-system-id $EFS
-            done
-
-            # 8. Remover Security Groups (exceto o default)
-            echo "Removendo Security Groups..."
-            DEFAULT_SG=$(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$VPC_ID" "Name=group-name,Values=default" --query 'SecurityGroups[0].GroupId' --output text)
-            for SG in $(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$VPC_ID" --query 'SecurityGroups[*].GroupId' --output text); do
-              if [ "$SG" != "$DEFAULT_SG" ]; then
-                aws ec2 delete-security-group --group-id $SG || true
-              fi
-            done
-
-            # 9. Remover subnets
-            echo "Removendo Subnets..."
-            for SUBNET in $(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query 'Subnets[*].SubnetId' --output text); do
-              aws ec2 delete-subnet --subnet-id $SUBNET || true
+            
+            # 6.2 Remover NAT Gateways
+            echo "Removendo NAT Gateways..."
+            for NAT in $(aws ec2 describe-nat-gateways --filter "Name=vpc-id,Values=${VPC_ID}" --query 'NatGateways[*].NatGatewayId' --output text || echo ""); do
+              echo "Removendo NAT Gateway: $NAT"
+              aws ec2 delete-nat-gateway --nat-gateway-id $NAT || true
             done
             
-            # 10. Remover route tables (exceto a main)
+            # Aguardar NAT Gateways serem removidos
+            echo "Aguardando NAT Gateways serem removidos..."
+            sleep 60
+            
+            # 6.3 Remover Internet Gateway
+            echo "Removendo Internet Gateway..."
+            IGW_ID=$(aws ec2 describe-internet-gateways \
+              --filters "Name=attachment.vpc-id,Values=${VPC_ID}" \
+              --query 'InternetGateways[0].InternetGatewayId' --output text || echo "")
+            if [ ! -z "$IGW_ID" ] && [ "$IGW_ID" != "None" ]; then
+              echo "Desanexando e removendo IGW: $IGW_ID"
+              aws ec2 detach-internet-gateway --internet-gateway-id $IGW_ID --vpc-id $VPC_ID || true
+              aws ec2 delete-internet-gateway --internet-gateway-id $IGW_ID || true
+            fi
+            
+            # 6.4 Remover Route Tables
             echo "Removendo Route Tables..."
-            MAIN_RT=$(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" "Name=association.main,Values=true" --query 'RouteTables[0].RouteTableId' --output text)
-            for RT in $(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" --query 'RouteTables[*].RouteTableId' --output text); do
+            MAIN_RT=$(aws ec2 describe-route-tables \
+              --filters "Name=vpc-id,Values=${VPC_ID}" "Name=association.main,Values=true" \
+              --query 'RouteTables[0].RouteTableId' --output text || echo "")
+            for RT in $(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=${VPC_ID}" --query 'RouteTables[*].RouteTableId' --output text || echo ""); do
               if [ "$RT" != "$MAIN_RT" ]; then
+                echo "Removendo Route Table: $RT"
+                # Primeiro remover associações
+                ASSOCS=$(aws ec2 describe-route-tables --route-table-id $RT --query 'RouteTables[0].Associations[*].RouteTableAssociationId' --output text || echo "")
+                for ASSOC in $ASSOCS; do
+                  aws ec2 disassociate-route-table --association-id $ASSOC || true
+                done
+                # Depois remover a route table
                 aws ec2 delete-route-table --route-table-id $RT || true
               fi
             done
             
-            # 11. Remover internet gateway
-            echo "Removendo Internet Gateway..."
-            IGW_ID=$(aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$VPC_ID" --query 'InternetGateways[0].InternetGatewayId' --output text)
-            if [ "$IGW_ID" != "None" ]; then
-              aws ec2 detach-internet-gateway --internet-gateway-id $IGW_ID --vpc-id $VPC_ID
-              aws ec2 delete-internet-gateway --internet-gateway-id $IGW_ID
-            fi
+            # 6.5 Remover Subnets
+            echo "Removendo Subnets..."
+            for SUBNET in $(aws ec2 describe-subnets --filters "Name=vpc-id,Values=${VPC_ID}" --query 'Subnets[*].SubnetId' --output text || echo ""); do
+              echo "Removendo Subnet: $SUBNET"
+              aws ec2 delete-subnet --subnet-id $SUBNET || true
+            done
             
-            # 12. Finalmente deletar a VPC
+            # 6.6 Finalmente remover a VPC
             echo "Removendo VPC..."
-            aws ec2 delete-vpc --vpc-id $VPC_ID
+            aws ec2 delete-vpc --vpc-id $VPC_ID || true
           fi
 
-      - name: Cleanup RDS Resources
-        run: |
-          echo "Limpando recursos RDS..."
-          
-          # Deletar parameter groups
-          for PG in $(aws rds describe-db-parameter-groups --query 'DBParameterGroups[?starts_with(DBParameterGroupName, `mautic-`)].DBParameterGroupName' --output text); do
-            aws rds delete-db-parameter-group --db-parameter-group-name $PG || true
-          done
-          
-          # Deletar subnet groups
-          for SG in $(aws rds describe-db-subnet-groups --query 'DBSubnetGroups[?starts_with(DBSubnetGroupName, `mautic-`)].DBSubnetGroupName' --output text); do
-            aws rds delete-db-subnet-group --db-subnet-group-name $SG || true
+          # 7. Limpar Secrets e Parameters
+          echo "Limpando Secrets..."
+          for SECRET in $(aws secretsmanager list-secrets --query 'SecretList[?starts_with(Name, `/mautic/`)].Name' --output text || echo ""); do
+            echo "Removendo Secret: $SECRET"
+            aws secretsmanager delete-secret \
+              --secret-id $SECRET \
+              --force-delete-without-recovery || true
           done
 
-      - name: Cleanup Secrets and Parameters
-        run: |
-          echo "Limpando Secrets e Parameters..."
-          
-          # Deletar secrets que começam com /mautic/
-          for SECRET in $(aws secretsmanager list-secrets --query 'SecretList[?starts_with(Name, `/mautic/`)].Name' --output text); do
-            aws secretsmanager delete-secret --secret-id $SECRET --force-delete-without-recovery || true
-          done
-          
-          # Deletar parâmetros que começam com /mautic/
-          aws ssm delete-parameters --names $(aws ssm describe-parameters --parameter-filters "Key=Name,Values=/mautic/,Option=BeginsWith" --query 'Parameters[*].Name' --output text) || true
+          echo "Limpando Parameters..."
+          PARAMS=$(aws ssm describe-parameters \
+            --parameter-filters "Key=Name,Values=/mautic/,Option=BeginsWith" \
+            --query 'Parameters[*].Name' --output text || echo "")
+          if [ ! -z "$PARAMS" ]; then
+            echo "Removendo Parameters: $PARAMS"
+            aws ssm delete-parameters --names $PARAMS || true
+          fi
+
+          # 8. Limpar estado do Terraform
+          if [ "${{ github.event.inputs.force }}" == "true" ]; then
+            echo "Limpando estado do Terraform..."
+            AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
+            
+            # Remover bucket do Terraform state
+            echo "Removendo bucket do Terraform state: $BUCKET_NAME"
+            aws s3 rm s3://${BUCKET_NAME} --recursive || true
+            aws s3api delete-bucket --bucket ${BUCKET_NAME} || true
+            
+            # Remover tabela do DynamoDB
+            echo "Removendo tabela do DynamoDB"
+            aws dynamodb delete-table \
+              --table-name mautic-terraform-lock \
+              --region us-east-1 || true
+          fi
 
       - name: Notify Completion
+        if: success()
         run: |
-          echo "Limpeza dos recursos Mautic concluída" 
+          echo "Limpeza dos recursos Mautic concluída com sucesso" 
