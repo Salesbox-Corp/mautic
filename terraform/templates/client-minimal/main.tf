@@ -54,39 +54,13 @@ data "aws_subnets" "public" {
 # Obter ID da conta AWS
 data "aws_caller_identity" "current" {}
 
-# Criar roles do ECS
-resource "aws_iam_role" "ecs_execution" {
+# Usar data sources para roles existentes ao invés de criar novas
+data "aws_iam_role" "ecs_execution" {
   name = "${module.naming.prefix}-ecs-execution"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ecs-tasks.amazonaws.com"
-        }
-      }
-    ]
-  })
 }
 
-resource "aws_iam_role" "ecs_task" {
+data "aws_iam_role" "ecs_task" {
   name = "${module.naming.prefix}-ecs-task"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ecs-tasks.amazonaws.com"
-        }
-      }
-    ]
-  })
 }
 
 # Criar repositório ECR apenas se não existir
@@ -118,13 +92,13 @@ module "ecs" {
   task_cpu          = var.task_cpu
   task_memory       = var.task_memory
   vpc_id            = local.vpc_id
-  subnet_ids        = data.aws_subnets.public.ids  # Alterado para usar subnets públicas
+  subnet_ids        = data.aws_subnets.public.ids
   tags              = module.naming.tags
   client            = var.client
   environment       = var.environment
   
-  execution_role_arn = aws_iam_role.ecs_execution.arn
-  task_role_arn      = aws_iam_role.ecs_task.arn
+  execution_role_arn = data.aws_iam_role.ecs_execution.arn
+  task_role_arn      = data.aws_iam_role.ecs_task.arn
   ecr_repository_url = var.ecr_exists == "true" ? data.aws_ecr_repository.existing_mautic[0].repository_url : aws_ecr_repository.mautic[0].repository_url
 
   # Adicionar variáveis do banco de dados
@@ -132,13 +106,13 @@ module "ecs" {
   db_name     = var.db_name
   db_username = var.db_username
 
-  container_environment = []  # Será configurado via SSM/Secrets Manager
+  container_environment = []
 }
 
 # Adicionar políticas necessárias ao execution role
 resource "aws_iam_role_policy" "ecs_execution_ecr" {
   name = "${module.naming.prefix}-ecs-execution-ecr"
-  role = aws_iam_role.ecs_execution.id
+  role = data.aws_iam_role.ecs_execution.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -165,7 +139,7 @@ resource "aws_iam_role_policy" "ecs_execution_ecr" {
 
 resource "aws_iam_role_policy" "ecs_execution_logs" {
   name = "${module.naming.prefix}-ecs-execution-logs"
-  role = aws_iam_role.ecs_execution.id
+  role = data.aws_iam_role.ecs_execution.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -190,7 +164,7 @@ resource "aws_iam_role_policy" "ecs_execution_logs" {
 
 resource "aws_iam_role_policy" "ecs_execution_ssm" {
   name = "${module.naming.prefix}-ecs-execution-ssm"
-  role = aws_iam_role.ecs_execution.id
+  role = data.aws_iam_role.ecs_execution.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -217,7 +191,7 @@ resource "aws_iam_role_policy" "ecs_execution_ssm" {
 # Política para o task role
 resource "aws_iam_role_policy" "ecs_task_permissions" {
   name = "${module.naming.prefix}-ecs-task-permissions"
-  role = aws_iam_role.ecs_task.id
+  role = data.aws_iam_role.ecs_task.id
 
   policy = jsonencode({
     Version = "2012-10-17"
