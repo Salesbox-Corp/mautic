@@ -19,7 +19,9 @@ RUN apt-get update && apt-get install -y \
     zip \
     gd \
     imap \
-    opcache
+    opcache \
+    bcmath \
+    sockets
 
 # Configurar Apache
 RUN a2enmod rewrite
