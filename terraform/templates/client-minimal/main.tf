@@ -137,14 +137,87 @@ module "ecs" {
 }
 
 # Adicionar políticas necessárias ao execution role
-resource "aws_iam_role_policy_attachment" "ecs_execution" {
-  role       = aws_iam_role.ecs_execution.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+resource "aws_iam_role_policy" "ecs_execution_ecr" {
+  name = "${module.naming.prefix}-ecs-execution-ecr"
+  role = aws_iam_role.ecs_execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:GetRepositoryPolicy",
+          "ecr:DescribeRepositories",
+          "ecr:ListImages",
+          "ecr:DescribeImages",
+          "ecr:TagResource",
+          "ecr:UntagResource"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
 }
 
-# Política para acessar Secrets Manager
-resource "aws_iam_role_policy" "ecs_task_secrets" {
-  name = "${module.naming.prefix}-ecs-secrets"
+resource "aws_iam_role_policy" "ecs_execution_logs" {
+  name = "${module.naming.prefix}-ecs-execution-logs"
+  role = aws_iam_role.ecs_execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:CreateLogGroup",
+          "logs:DescribeLogStreams",
+          "logs:DescribeLogGroups"
+        ]
+        Resource = [
+          "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/ecs/${module.naming.prefix}*",
+          "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/ecs/${module.naming.prefix}*:log-stream:*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "ecs_execution_ssm" {
+  name = "${module.naming.prefix}-ecs-execution-ssm"
+  role = aws_iam_role.ecs_execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameters",
+          "ssm:GetParameter",
+          "ssm:GetParametersByPath",
+          "secretsmanager:GetSecretValue",
+          "kms:Decrypt"
+        ]
+        Resource = [
+          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/mautic/${var.client}/${var.environment}/*",
+          "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:/mautic/${var.client}/${var.environment}/*",
+          "arn:aws:kms:${var.aws_region}:${data.aws_caller_identity.current.account_id}:key/*"
+        ]
+      }
+    ]
+  })
+}
+
+# Política para o task role
+resource "aws_iam_role_policy" "ecs_task_permissions" {
+  name = "${module.naming.prefix}-ecs-task-permissions"
   role = aws_iam_role.ecs_task.id
 
   policy = jsonencode({
@@ -153,13 +226,23 @@ resource "aws_iam_role_policy" "ecs_task_secrets" {
       {
         Effect = "Allow"
         Action = [
-          "secretsmanager:GetSecretValue",
           "ssm:GetParameters",
-          "ssm:GetParameter"
+          "ssm:GetParameter",
+          "ssm:GetParametersByPath",
+          "secretsmanager:GetSecretValue",
+          "kms:Decrypt",
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:ListBucket",
+          "ses:SendEmail",
+          "ses:SendRawEmail"
         ]
         Resource = [
+          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/mautic/${var.client}/${var.environment}/*",
           "arn:aws:secretsmanager:${var.aws_region}:${data.aws_caller_identity.current.account_id}:secret:/mautic/${var.client}/${var.environment}/*",
-          "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/mautic/${var.client}/${var.environment}/*"
+          "arn:aws:kms:${var.aws_region}:${data.aws_caller_identity.current.account_id}:key/*",
+          "arn:aws:s3:::${module.naming.prefix}-*/*",
+          "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:identity/*"
         ]
       }
     ]
