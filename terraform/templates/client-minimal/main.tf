@@ -126,7 +126,6 @@ module "ecs" {
   execution_role_arn = aws_iam_role.ecs_execution.arn
   task_role_arn      = aws_iam_role.ecs_task.arn
   ecr_repository_url = var.ecr_exists == "true" ? data.aws_ecr_repository.existing_mautic[0].repository_url : aws_ecr_repository.mautic[0].repository_url
-  security_groups    = [aws_security_group.ecs_tasks.id]
 
   # Adicionar variáveis do banco de dados
   db_host     = var.db_host
