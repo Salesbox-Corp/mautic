@@ -158,7 +158,6 @@ resource "aws_security_group" "alb" {
   description = "Security group for Application Load Balancer"
   vpc_id      = var.vpc_id
 
-  # Permitir tráfego de entrada HTTP
   ingress {
     from_port   = 80
     to_port     = 80
@@ -167,7 +166,6 @@ resource "aws_security_group" "alb" {
     description = "Allow HTTP traffic from internet"
   }
 
-  # Permitir tráfego de entrada HTTPS
   ingress {
     from_port   = 443
     to_port     = 443
@@ -176,7 +174,6 @@ resource "aws_security_group" "alb" {
     description = "Allow HTTPS traffic from internet"
   }
 
-  # Permitir todo tráfego de saída
   egress {
     from_port   = 0
     to_port     = 0
@@ -217,11 +214,39 @@ resource "aws_security_group" "ecs_tasks" {
   tags = merge(var.tags, {
     Name = "${var.project_name}-ecs-tasks-sg"
   })
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
-locals {
-  # Usar o security group criado ou o existente
-  ecs_tasks_security_group_id = coalesce(var.existing_security_group_id, aws_security_group.ecs_tasks.id)
+# Security Group para EFS
+resource "aws_security_group" "efs" {
+  name        = "${var.project_name}-efs-sg"
+  description = "Security group for EFS mount targets"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    from_port       = 2049
+    to_port         = 2049
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ecs_tasks.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(var.tags, {
+    Name = "${var.project_name}-efs-sg"
+  })
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # Buscar o log group existente em vez de tentar criar um novo
@@ -236,15 +261,13 @@ resource "aws_ecs_service" "main" {
   desired_count   = var.desired_count
   launch_type     = "FARGATE"
   
-  # Configuração de deployment
   deployment_maximum_percent         = 200
   deployment_minimum_healthy_percent = 100
   health_check_grace_period_seconds = 60
 
-  # Configuração de rede
   network_configuration {
     subnets          = var.subnet_ids
-    security_groups  = [local.ecs_tasks_security_group_id]
+    security_groups  = [aws_security_group.ecs_tasks.id]
     assign_public_ip = true
   }
 
@@ -254,20 +277,19 @@ resource "aws_ecs_service" "main" {
     container_port   = 80
   }
 
-  # Estratégia de deployment
   deployment_controller {
     type = "ECS"
   }
 
-  # Configuração de auto scaling
   enable_ecs_managed_tags = true
   propagate_tags         = "SERVICE"
   
-  # Garantir que os listeners do ALB e o security group sejam criados antes do serviço ECS
   depends_on = [
     aws_lb_listener.http,
     aws_lb_listener.https,
-    aws_security_group.ecs_tasks
+    aws_security_group.ecs_tasks,
+    aws_security_group.alb,
+    aws_lb_target_group.main
   ]
 
   lifecycle {

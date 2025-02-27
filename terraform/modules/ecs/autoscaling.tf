@@ -7,6 +7,10 @@ resource "aws_appautoscaling_target" "ecs" {
   service_namespace  = "ecs"
   
   depends_on = [aws_ecs_service.main]
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # Scaling por CPU
@@ -28,6 +32,10 @@ resource "aws_appautoscaling_policy" "cpu" {
   }
   
   depends_on = [aws_appautoscaling_target.ecs]
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # Scaling por Memória
@@ -49,6 +57,10 @@ resource "aws_appautoscaling_policy" "memory" {
   }
   
   depends_on = [aws_appautoscaling_target.ecs]
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # Scaling por Requisições do ALB
@@ -70,7 +82,15 @@ resource "aws_appautoscaling_policy" "alb" {
     }
   }
   
-  depends_on = [aws_appautoscaling_target.ecs, aws_lb.main, aws_lb_target_group.main]
+  depends_on = [
+    aws_appautoscaling_target.ecs,
+    aws_lb.main,
+    aws_lb_target_group.main
+  ]
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # CloudWatch Alarms para monitoramento
@@ -92,6 +112,10 @@ resource "aws_cloudwatch_metric_alarm" "service_cpu_high" {
   }
   
   depends_on = [aws_ecs_service.main]
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_cloudwatch_metric_alarm" "service_memory_high" {
@@ -112,4 +136,8 @@ resource "aws_cloudwatch_metric_alarm" "service_memory_high" {
   }
   
   depends_on = [aws_ecs_service.main]
+
+  lifecycle {
+    create_before_destroy = true
+  }
 } 
