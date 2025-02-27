@@ -1,6 +1,6 @@
 # Security Group para o EFS
 resource "aws_security_group" "efs" {
-  name        = "${var.project_name}-efs-sg"
+  name        = "${var.project_name}-efs-sg-${random_id.sg_suffix.hex}"
   description = "Security group for EFS mount targets"
   vpc_id      = var.vpc_id
 
@@ -21,7 +21,7 @@ resource "aws_security_group" "efs" {
   }
 
   tags = merge(var.tags, {
-    Name = "${var.project_name}-efs-sg"
+    Name = "${var.project_name}-efs-sg-${random_id.sg_suffix.hex}"
   })
   
   lifecycle {

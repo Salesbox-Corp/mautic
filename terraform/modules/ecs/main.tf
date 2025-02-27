@@ -152,9 +152,14 @@ resource "aws_lb" "main" {
   tags = var.tags
 }
 
+# Gerar identificador único para os security groups
+resource "random_id" "sg_suffix" {
+  byte_length = 4
+}
+
 # Security Group para o ALB
 resource "aws_security_group" "alb" {
-  name        = "${var.project_name}-alb-sg"
+  name        = "${var.project_name}-alb-sg-${random_id.sg_suffix.hex}"
   description = "Security group for Application Load Balancer"
   vpc_id      = var.vpc_id
 
@@ -183,7 +188,7 @@ resource "aws_security_group" "alb" {
   }
 
   tags = merge(var.tags, {
-    Name = "${var.project_name}-alb-sg"
+    Name = "${var.project_name}-alb-sg-${random_id.sg_suffix.hex}"
   })
 
   lifecycle {
@@ -193,7 +198,7 @@ resource "aws_security_group" "alb" {
 
 # Security Group para tasks ECS
 resource "aws_security_group" "ecs_tasks" {
-  name        = "${var.project_name}-ecs-tasks-sg"
+  name        = "${var.project_name}-ecs-tasks-sg-${random_id.sg_suffix.hex}"
   description = "Security group for ECS tasks"
   vpc_id      = var.vpc_id
 
@@ -212,7 +217,7 @@ resource "aws_security_group" "ecs_tasks" {
   }
 
   tags = merge(var.tags, {
-    Name = "${var.project_name}-ecs-tasks-sg"
+    Name = "${var.project_name}-ecs-tasks-sg-${random_id.sg_suffix.hex}"
   })
 
   lifecycle {
