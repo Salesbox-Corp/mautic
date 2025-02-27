@@ -95,23 +95,37 @@ jobs:
             LOGO_URL="${{ github.event.inputs.custom_logo_url }}"
             # Verificar se o cliente já existe no config.json
             if jq -e ".clients.\"${{ needs.prepare.outputs.client }}\"" clients/config.json > /dev/null; then
-              # Cliente existe, atualizar logo_url
-              jq --arg logo "$LOGO_URL" --arg client "${{ needs.prepare.outputs.client }}" '.clients[$client].logo_url = $logo' clients/config.json > clients/config.json.tmp
+              # Cliente existe, verificar se a URL é diferente
+              CURRENT_URL=$(jq -r ".clients.\"${{ needs.prepare.outputs.client }}\".logo_url" clients/config.json)
+              if [ "$CURRENT_URL" != "$LOGO_URL" ]; then
+                # URL é diferente, atualizar
+                jq --arg logo "$LOGO_URL" --arg client "${{ needs.prepare.outputs.client }}" '.clients[$client].logo_url = $logo' clients/config.json > clients/config.json.tmp
+                mv clients/config.json.tmp clients/config.json
+                
+                # Configurar Git
+                git config --global user.name "GitHub Actions Bot"
+                git config --global user.email "actions@github.com"
+                
+                # Commit e push das alterações
+                git add clients/config.json
+                git commit -m "chore: atualiza logo_url para cliente ${{ needs.prepare.outputs.client }}"
+                git push origin HEAD:main
+              fi
             else
               # Cliente não existe, criar novo
               jq --arg logo "$LOGO_URL" --arg client "${{ needs.prepare.outputs.client }}" '.clients[$client] = {"logo_url": $logo, "environments": {"demo": {}, "staging": {}, "prd": {}}}' clients/config.json > clients/config.json.tmp
+              mv clients/config.json.tmp clients/config.json
+              
+              # Configurar Git
+              git config --global user.name "GitHub Actions Bot"
+              git config --global user.email "actions@github.com"
+              
+              # Commit e push das alterações
+              git add clients/config.json
+              git commit -m "chore: adiciona configuração para cliente ${{ needs.prepare.outputs.client }}"
+              git push origin HEAD:main
             fi
-            mv clients/config.json.tmp clients/config.json
             echo "MAUTIC_CUSTOM_LOGO_URL=$LOGO_URL" >> $GITHUB_ENV
-            
-            # Configurar Git
-            git config --global user.name "GitHub Actions Bot"
-            git config --global user.email "actions@github.com"
-            
-            # Commit e push das alterações
-            git add clients/config.json
-            git commit -m "chore: atualiza logo_url para cliente ${{ needs.prepare.outputs.client }}"
-            git push origin HEAD:main
           else
             # Tentar ler logo_url do config.json
             if [ -f clients/config.json ]; then

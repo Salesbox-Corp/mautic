@@ -5,7 +5,7 @@
 
 About Mautic
 ============
-Mautic is the world’s largest open source marketing automation project. With over 200,000 organisations using Mautic and over 1,000 community volunteers, we empower businesses by making it easy to manage their marketing across a range of channels. Stay up to date about initiatives, releases and strategy via our [blog][mautic-blog].
+Mautic is the world's largest open source marketing automation project. With over 200,000 organisations using Mautic and over 1,000 community volunteers, we empower businesses by making it easy to manage their marketing across a range of channels. Stay up to date about initiatives, releases and strategy via our [blog][mautic-blog].
 
 Marketing automation has historically been difficult to implement within organisations. The Mautic Community is an example of open source at its best, offering great software and a vibrant and caring community in which to learn and share knowledge.
 
@@ -15,9 +15,9 @@ Open source means more than open code. Open source provides equality for all and
 
 Get Involved
 =============
-Before we tell you how to install and use Mautic, we like to shamelessly plug our awesome user and developer communities! Users, start [here][get-involved] for inspiration, or follow us on Twitter [@MauticCommunity][twitter] or Facebook [@MauticCommunity][facebook]. Once you’re familiar with using the software, maybe you will share your wisdom with others in our [Slack][slack] channel.
+Before we tell you how to install and use Mautic, we like to shamelessly plug our awesome user and developer communities! Users, start [here][get-involved] for inspiration, or follow us on Twitter [@MauticCommunity][twitter] or Facebook [@MauticCommunity][facebook]. Once you're familiar with using the software, maybe you will share your wisdom with others in our [Slack][slack] channel.
 
-Calling all devs, testers and tech writers! Technical contributions are also welcome. First, read our [general guidelines][contributing] about contributing. If you want to contribute code, read our [CONTRIBUTING.md][contributing-md] or [Contributing Code][contribute-developer] docs then check out the issues with the [T1 label][t1-issues] to get stuck in quickly and show us what you’re made of.
+Calling all devs, testers and tech writers! Technical contributions are also welcome. First, read our [general guidelines][contributing] about contributing. If you want to contribute code, read our [CONTRIBUTING.md][contributing-md] or [Contributing Code][contribute-developer] docs then check out the issues with the [T1 label][t1-issues] to get stuck in quickly and show us what you're made of.
 
 If you have questions, the Mautic Community can help provide the answers.
 
@@ -35,12 +35,12 @@ The GitHub version is recommended for both development and testing. The producti
 ### Disclaimer
 *Install from source only if you are comfortable using the command line. You'll be required to use various CLI commands to get Mautic working and keep it working. If the source/database schema gets out of sync with Mautic releases, the release updater may not work and will require manual updates. For production, we recommend the pre-packaged Mautic which is available at [mautic.org/download][download-mautic].*
 
-*Also note that source code outside of a [tagged release][tagged-release] should be considered ‘alpha’. It may contain bugs, cause unexpected results, data corruption or loss, and is not recommended for use in a production environment. Use at your own risk.*
+*Also note that source code outside of a [tagged release][tagged-release] should be considered 'alpha'. It may contain bugs, cause unexpected results, data corruption or loss, and is not recommended for use in a production environment. Use at your own risk.*
 
 ### How to install Mautic
 You must already have [Composer][composer] available on your computer because this is a development release and you'll need Composer to download the vendor packages.
 
-Also note that if you have DDEV installed, you can just run 'ddev start' as a DDEV project’s configuration is present in the repo. This will kick off the Mautic first-run process which will automatically install dependencies and configure Mautic for use. ✨ 🚀 Read more [here][ddev-mautic]
+Also note that if you have DDEV installed, you can just run 'ddev start' as a DDEV project's configuration is present in the repo. This will kick off the Mautic first-run process which will automatically install dependencies and configure Mautic for use. ✨ 🚀 Read more [here][ddev-mautic]
 
 Installing Mautic is a simple three-step process:
 
@@ -298,3 +298,77 @@ This project follows the [all-contributors][all-contributors] specification. Con
 [mautic-docs]: <https://docs.mautic.org>
 [dev-docs]: <https://devdocs.mautic.org>
 [all-contributors]: <https://github.com/all-contributors/all-contributors>
+
+# Mautic Multi-tenant
+
+Sistema de gerenciamento multi-tenant do Mautic usando Docker e AWS.
+
+## Visão Geral
+
+Este projeto permite criar e gerenciar múltiplas instâncias do Mautic para diferentes clientes, cada uma com suas próprias configurações e personalizações.
+
+## Funcionalidades
+
+- Deploy automatizado via GitHub Actions
+- Configuração personalizada por cliente
+- Gerenciamento de logos personalizados
+- Infraestrutura isolada por cliente
+- Múltiplos ambientes (demo, staging, produção)
+
+## Documentação
+
+- [Deploy de Clientes](docs/workflows/client-deploy.md)
+- [Configuração de Clientes](docs/clients/README.md)
+- [Infraestrutura AWS](docs/infrastructure/README.md)
+
+## Pré-requisitos
+
+- Conta AWS configurada
+- GitHub Actions habilitado
+- Credenciais AWS configuradas no GitHub Secrets
+- Docker instalado para desenvolvimento local
+
+## Quick Start
+
+1. **Preparação do Ambiente**
+   ```bash
+   # Clone o repositório
+   git clone https://github.com/seu-usuario/mautic-multitenant.git
+   cd mautic-multitenant
+   ```
+
+2. **Configuração do Cliente**
+   ```bash
+   # Adicionar novo cliente
+   ./scripts/add-client.sh cliente-exemplo "Nome do Cliente" https://exemplo.com/logo.png
+   ```
+
+3. **Deploy**
+   - Acesse GitHub Actions
+   - Selecione "Client Deployment"
+   - Preencha os parâmetros necessários
+   - Execute o workflow
+
+## Estrutura do Projeto
+
+```
+.
+├── .github/workflows/    # Workflows do GitHub Actions
+├── clients/             # Configurações dos clientes
+├── docs/               # Documentação
+├── scripts/            # Scripts de utilidade
+├── Dockerfile          # Configuração do container
+└── README.md           # Este arquivo
+```
+
+## Contribuição
+
+1. Fork o projeto
+2. Crie uma branch para sua feature (`git checkout -b feature/nova-feature`)
+3. Commit suas mudanças (`git commit -am 'Adiciona nova feature'`)
+4. Push para a branch (`git push origin feature/nova-feature`)
+5. Crie um Pull Request
+
+## Licença
+
+Este projeto está licenciado sob a licença MIT - veja o arquivo [LICENSE](LICENSE) para detalhes.
