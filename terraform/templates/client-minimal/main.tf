@@ -80,43 +80,6 @@ data "aws_ecr_repository" "existing_mautic" {
   name  = "mautic-${var.client}-${var.environment}"
 }
 
-# Tentar buscar security group existente para tasks ECS
-data "aws_security_group" "existing_ecs_tasks" {
-  count = var.use_existing_resources ? 1 : 0
-  
-  name   = "${module.naming.prefix}-ecs-tasks-sg"
-  vpc_id = local.vpc_id
-}
-
-# Criar security group apenas se não existir
-resource "aws_security_group" "ecs_tasks" {
-  count = var.use_existing_resources ? 0 : 1
-  
-  name        = "${module.naming.prefix}-ecs-tasks-sg"
-  description = "Security group for ECS tasks"
-  vpc_id      = local.vpc_id
-
-  lifecycle {
-    create_before_destroy = true
-  }
-
-  egress {
-    description = "Allow all outbound traffic"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = module.naming.tags
-
-  depends_on = [module.ecs]
-}
-
-locals {
-  ecs_tasks_security_group_id = var.use_existing_resources ? data.aws_security_group.existing_ecs_tasks[0].id : aws_security_group.ecs_tasks[0].id
-}
-
 module "ecs" {
   source = "./modules/ecs"
   
@@ -135,7 +98,6 @@ module "ecs" {
   client            = var.client
   environment       = var.environment
   custom_logo_url   = var.custom_logo_url
-  use_existing_resources = true  # Sempre tentar usar recursos existentes primeiro
   
   execution_role_arn = data.aws_iam_role.ecs_execution.arn
   task_role_arn      = data.aws_iam_role.ecs_task.arn
@@ -152,9 +114,6 @@ module "ecs" {
   hosted_zone_id = var.hosted_zone_id
 
   container_environment = []
-  
-  # Passar o ID do security group existente
-  existing_security_group_id = local.ecs_tasks_security_group_id
 }
 
 # Adicionar políticas necessárias ao execution role
