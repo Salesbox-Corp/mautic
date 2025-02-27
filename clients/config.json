@@ -1,13 +1,21 @@
 {
-    "clients": {
-        "exemplo-cliente": {
-            "name": "Exemplo Cliente",
-            "logo_url": "https://exemplo.com/logo.png",
-            "environments": {
-                "demo": {},
-                "staging": {},
-                "prd": {}
-            }
-        }
+  "clients": {
+    "exemplo-cliente": {
+      "name": "Exemplo Cliente",
+      "logo_url": "https://exemplo.com/logo.png",
+      "environments": {
+        "demo": {},
+        "staging": {},
+        "prd": {}
+      }
+    },
+    "salesbox": {
+      "logo_url": "https://site.salesbox.com.br/img/logo-salesbox2%203.png",
+      "environments": {
+        "demo": {},
+        "staging": {},
+        "prd": {}
+      }
     }
+  }
 }
