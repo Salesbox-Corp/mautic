@@ -178,6 +178,12 @@ variable "custom_logo_url" {
   default     = ""
 }
 
+variable "use_existing_resources" {
+  description = "Se true, usa recursos existentes (security groups, log groups) ao invés de criar novos"
+  type        = bool
+  default     = false
+}
+
 locals {
   secrets_region = coalesce(var.secrets_region, var.aws_region)
 } 

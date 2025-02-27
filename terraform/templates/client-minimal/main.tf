@@ -97,6 +97,7 @@ module "ecs" {
   client            = var.client
   environment       = var.environment
   custom_logo_url   = var.custom_logo_url
+  use_existing_resources = true  # Sempre tentar usar recursos existentes
   
   execution_role_arn = data.aws_iam_role.ecs_execution.arn
   task_role_arn      = data.aws_iam_role.ecs_task.arn

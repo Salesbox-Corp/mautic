@@ -152,42 +152,18 @@ resource "aws_lb" "main" {
   tags = var.tags
 }
 
-resource "aws_ecs_service" "main" {
-  name            = "${var.project_name}-service"
-  cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.mautic.arn
-  desired_count   = var.desired_count
-  launch_type     = "FARGATE"
+# Verificar se o security group já existe
+data "aws_security_group" "existing_ecs_tasks" {
+  count = var.use_existing_resources ? 1 : 0
   
-  # Configuração de deployment
-  deployment_maximum_percent         = 200
-  deployment_minimum_healthy_percent = 100
-  health_check_grace_period_seconds = 60
-
-  # Configuração de rede
-  network_configuration {
-    subnets          = var.subnet_ids
-    security_groups  = [aws_security_group.ecs_tasks.id]
-    assign_public_ip = true
-  }
-
-  load_balancer {
-    target_group_arn = aws_lb_target_group.main.arn
-    container_name   = "mautic"
-    container_port   = 80
-  }
-
-  # Estratégia de deployment
-  deployment_controller {
-    type = "ECS"
-  }
-
-  # Configuração de auto scaling
-  enable_ecs_managed_tags = true
-  propagate_tags         = "SERVICE"
+  name   = "${var.project_name}-ecs-tasks"
+  vpc_id = var.vpc_id
 }
 
+# Criar security group apenas se não existir
 resource "aws_security_group" "ecs_tasks" {
+  count = var.use_existing_resources ? 0 : 1
+  
   name        = "${var.project_name}-ecs-tasks"
   description = "Security group for ECS tasks"
   vpc_id      = var.vpc_id
@@ -209,6 +185,63 @@ resource "aws_security_group" "ecs_tasks" {
   }
 
   tags = var.tags
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+locals {
+  ecs_tasks_security_group_id = var.use_existing_resources ? data.aws_security_group.existing_ecs_tasks[0].id : aws_security_group.ecs_tasks[0].id
+}
+
+# Verificar se o log group já existe
+data "aws_cloudwatch_log_group" "existing_ecs" {
+  count = var.use_existing_resources ? 1 : 0
+  name  = "/ecs/${var.project_name}"
+}
+
+# Criar log group apenas se não existir
+resource "aws_cloudwatch_log_group" "ecs" {
+  count             = var.use_existing_resources ? 0 : 1
+  name              = "/ecs/${var.project_name}"
+  retention_in_days = 30
+  tags              = var.tags
+}
+
+resource "aws_ecs_service" "main" {
+  name            = "${var.project_name}-service"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.mautic.arn
+  desired_count   = var.desired_count
+  launch_type     = "FARGATE"
+  
+  # Configuração de deployment
+  deployment_maximum_percent         = 200
+  deployment_minimum_healthy_percent = 100
+  health_check_grace_period_seconds = 60
+
+  # Configuração de rede
+  network_configuration {
+    subnets          = var.subnet_ids
+    security_groups  = [local.ecs_tasks_security_group_id]
+    assign_public_ip = true
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.main.arn
+    container_name   = "mautic"
+    container_port   = 80
+  }
+
+  # Estratégia de deployment
+  deployment_controller {
+    type = "ECS"
+  }
+
+  # Configuração de auto scaling
+  enable_ecs_managed_tags = true
+  propagate_tags         = "SERVICE"
 }
 
 resource "aws_security_group" "alb" {
@@ -274,10 +307,4 @@ resource "aws_lb_listener" "http" {
     type             = "forward"
     target_group_arn = aws_lb_target_group.main.arn
   }
-}
-
-resource "aws_cloudwatch_log_group" "ecs" {
-  name              = "/ecs/${var.project_name}"
-  retention_in_days = 30
-  tags              = var.tags
 } 
