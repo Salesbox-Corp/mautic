@@ -54,12 +54,22 @@ COPY . .
 RUN php -d memory_limit=-1 /usr/bin/composer install --no-dev --optimize-autoloader
 
 # Configurar permissões
-RUN chown -R www-data:www-data .
+RUN chown -R www-data:www-data . \
+    && find . -type d -exec chmod 775 {} \; \
+    && find . -type f -exec chmod 664 {} \;
 
-# Criar diretório de mídia com permissões corretas
-RUN mkdir -p /var/www/html/media && \
-    chown -R www-data:www-data /var/www/html/media && \
-    chmod -R 755 /var/www/html/media
+# Criar diretórios necessários com permissões corretas
+RUN mkdir -p /var/www/html/media \
+    /var/www/html/app/config \
+    /var/www/html/app/cache \
+    /var/www/html/app/logs \
+    /var/www/html/app/spool \
+    && chown -R www-data:www-data /var/www/html \
+    && chmod -R 775 /var/www/html/app/config \
+    && chmod -R 775 /var/www/html/media \
+    && chmod -R 775 /var/www/html/app/cache \
+    && chmod -R 775 /var/www/html/app/logs \
+    && chmod -R 775 /var/www/html/app/spool
 
 # Copiar e configurar script de inicialização
 COPY docker-entrypoint.sh /usr/local/bin/
