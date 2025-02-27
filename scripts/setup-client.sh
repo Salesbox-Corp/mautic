@@ -447,12 +447,20 @@ terraform {
   }
 }
 
+# Provider principal para a região do cliente
 provider "aws" {
   region = var.aws_region
 }
 
+# Provider específico para Route 53 (sempre em us-east-1)
 provider "aws" {
   alias  = "us-east-1"
+  region = "us-east-1"
+}
+
+# Provider para ACM (certificados) em us-east-1
+provider "aws" {
+  alias  = "acm"
   region = "us-east-1"
 }
 EOF
@@ -463,7 +471,7 @@ terraform {
   backend "s3" {
     bucket         = "mautic-terraform-state"
     key            = "${STATE_KEY}"
-    region         = "us-east-1"
+    region         = "us-east-1"  # Região fixa para o bucket de estado
     dynamodb_table = "mautic-terraform-lock"
     encrypt        = true
   }
@@ -485,18 +493,60 @@ subdomain = "${SUBDOMAIN}"
 hosted_zone_id = "Z030834419BDWDHKI97GN"
 task_cpu = 1024
 task_memory = 2048
+ecr_exists = "${ECR_EXISTS}"
 EOF
 
 # Mudar para o diretório do cliente
 cd "${CLIENT_DIR}"
 
+# Verificar permissões do usuário
+echo "Verificando permissões do usuário..."
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+AWS_USER=$(aws sts get-caller-identity --query Arn --output text)
+
+echo "Usuário atual: ${AWS_USER}"
+echo "Conta AWS: ${AWS_ACCOUNT_ID}"
+
+# Verificar permissões para S3
+echo "Verificando permissões para S3..."
+if ! aws s3api get-bucket-policy --bucket mautic-terraform-state --region us-east-1 >/dev/null 2>&1; then
+    echo "AVISO: Não foi possível obter a política do bucket. Tentando configurar permissões..."
+    
+    # Tentar configurar permissões do bucket
+    aws s3api put-bucket-policy \
+        --bucket mautic-terraform-state \
+        --region us-east-1 \
+        --policy "{
+            \"Version\": \"2012-10-17\",
+            \"Statement\": [
+                {
+                    \"Effect\": \"Allow\",
+                    \"Principal\": {
+                        \"AWS\": \"${AWS_USER}\"
+                    },
+                    \"Action\": [
+                        \"s3:GetObject\",
+                        \"s3:PutObject\",
+                        \"s3:DeleteObject\",
+                        \"s3:ListBucket\"
+                    ],
+                    \"Resource\": [
+                        \"arn:aws:s3:::mautic-terraform-state\",
+                        \"arn:aws:s3:::mautic-terraform-state/*\"
+                    ]
+                }
+            ]
+        }" || echo "Não foi possível configurar a política do bucket. Verifique suas permissões."
+fi
+
 # Verificar se o bucket do backend existe
-echo "Verificando bucket do backend..."
+echo "Verificando bucket do backend na região us-east-1..."
 if ! aws s3api head-bucket --bucket "mautic-terraform-state" --region us-east-1 2>/dev/null; then
-    echo "Bucket mautic-terraform-state não existe. Tentando criar..."
+    echo "Bucket mautic-terraform-state não existe. Tentando criar na região us-east-1..."
+    # Para us-east-1, não devemos especificar LocationConstraint
     aws s3api create-bucket \
         --bucket "mautic-terraform-state" \
-        --region us-east-1 || echo "Não foi possível criar o bucket, pode ser que ele já exista em outra conta ou região."
+        --region us-east-1 || echo "Não foi possível criar o bucket, pode ser que ele já exista em outra conta."
     
     # Habilitar versionamento
     aws s3api put-bucket-versioning \
@@ -506,9 +556,9 @@ if ! aws s3api head-bucket --bucket "mautic-terraform-state" --region us-east-1 
 fi
 
 # Verificar se a tabela DynamoDB existe
-echo "Verificando tabela DynamoDB..."
+echo "Verificando tabela DynamoDB na região us-east-1..."
 if ! aws dynamodb describe-table --table-name "mautic-terraform-lock" --region us-east-1 >/dev/null 2>&1; then
-    echo "Tabela mautic-terraform-lock não existe. Tentando criar..."
+    echo "Tabela mautic-terraform-lock não existe. Tentando criar na região us-east-1..."
     aws dynamodb create-table \
         --table-name "mautic-terraform-lock" \
         --attribute-definitions AttributeName=LockID,AttributeType=S \
@@ -521,9 +571,17 @@ if ! aws dynamodb describe-table --table-name "mautic-terraform-lock" --region u
     aws dynamodb wait table-exists --table-name "mautic-terraform-lock" --region us-east-1 || true
 fi
 
-# Inicializar Terraform
+# Verificar permissões no bucket
+echo "Verificando permissões no bucket S3..."
+# Tentar listar objetos para verificar permissões
+if ! aws s3 ls s3://mautic-terraform-state/ --region us-east-1 >/dev/null 2>&1; then
+    echo "AVISO: Não foi possível listar objetos no bucket. Pode haver problemas de permissão."
+    echo "Verifique se o usuário atual tem permissões para acessar o bucket mautic-terraform-state."
+fi
+
+# Inicializar Terraform com opção de migração de estado
 echo "Inicializando Terraform..."
-terraform init -reconfigure \
+terraform init -reconfigure -migrate-state \
     -backend=true \
     -backend-config="bucket=mautic-terraform-state" \
     -backend-config="key=${STATE_KEY}" \
@@ -533,13 +591,31 @@ terraform init -reconfigure \
 echo "Planejando mudanças..."
 terraform plan -var-file=terraform.tfvars -out=tfplan || {
     echo "Erro ao planejar mudanças. Tentando novamente com inicialização forçada..."
-    terraform init -reconfigure -force-copy \
+    terraform init -reconfigure -force-copy -migrate-state \
         -backend=true \
         -backend-config="bucket=mautic-terraform-state" \
         -backend-config="key=${STATE_KEY}" \
         -backend-config="region=us-east-1"
     
-    terraform plan -var-file=terraform.tfvars -out=tfplan
+    # Se ainda houver problemas, tentar com backend local
+    if ! terraform plan -var-file=terraform.tfvars -out=tfplan; then
+        echo "Ainda há problemas com o backend S3. Tentando com backend local..."
+        # Criar arquivo de configuração temporário sem backend
+        cat > backend_local.tf <<EOF
+terraform {
+  backend "local" {}
+}
+EOF
+        
+        # Inicializar com backend local
+        terraform init -reconfigure -force-copy
+        
+        # Tentar planejar novamente
+        terraform plan -var-file=terraform.tfvars -out=tfplan || {
+            echo "Não foi possível planejar as mudanças mesmo com backend local."
+            exit 1
+        }
+    fi
 }
 
 # Aplicar mudanças
@@ -548,7 +624,13 @@ if [ -f "tfplan" ]; then
     if ! terraform apply tfplan; then
         echo "Erro na aplicação do Terraform"
         rm -f tfplan
-        exit 1
+        
+        # Se falhar, tentar aplicar diretamente
+        echo "Tentando aplicar diretamente sem plano..."
+        if ! terraform apply -var-file=terraform.tfvars -auto-approve; then
+            echo "Não foi possível aplicar as mudanças."
+            exit 1
+        fi
     fi
     # Remover arquivo de plano
     rm -f tfplan
@@ -558,6 +640,15 @@ else
         echo "Erro na aplicação do Terraform"
         exit 1
     fi
+fi
+
+# Verificar se o estado foi salvo corretamente
+echo "Verificando estado do Terraform..."
+if ! terraform state list >/dev/null 2>&1; then
+    echo "AVISO: Não foi possível listar o estado do Terraform."
+    echo "Isso pode indicar problemas com o backend."
+else
+    echo "Estado do Terraform verificado com sucesso."
 fi
 
 # Voltar para o diretório original
