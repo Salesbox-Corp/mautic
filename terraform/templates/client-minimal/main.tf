@@ -1,5 +1,5 @@
 module "naming" {
-  source = "../../../../modules/naming"
+  source = "./modules/naming"
   
   client      = var.client
   environment = var.environment
@@ -81,7 +81,7 @@ data "aws_ecr_repository" "existing_mautic" {
 }
 
 module "ecs" {
-  source = "../../../../modules/ecs"
+  source = "./modules/ecs"
   
   providers = {
     aws = aws

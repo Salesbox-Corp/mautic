@@ -426,6 +426,50 @@ fi
 echo "Preparando configuração Terraform..."
 mkdir -p "${CLIENT_DIR}"
 
+# Copiar arquivos do template
+echo "Copiando arquivos do template..."
+cp terraform/templates/client-minimal/main.tf "${CLIENT_DIR}/"
+cp terraform/templates/client-minimal/variables.tf "${CLIENT_DIR}/"
+
+# Criar diretório de módulos e copiar módulos
+echo "Copiando módulos Terraform..."
+mkdir -p "${CLIENT_DIR}/modules"
+cp -r terraform/modules/* "${CLIENT_DIR}/modules/"
+
+# Criar provider.tf
+cat > "${CLIENT_DIR}/provider.tf" <<EOF
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = var.aws_region
+}
+
+provider "aws" {
+  alias  = "us-east-1"
+  region = "us-east-1"
+}
+EOF
+
+# Criar backend.tf
+cat > "${CLIENT_DIR}/backend.tf" <<EOF
+terraform {
+  backend "s3" {
+    bucket         = "mautic-terraform-state"
+    key            = "${STATE_KEY}"
+    region         = "${AWS_REGION}"
+    dynamodb_table = "mautic-terraform-lock"
+    encrypt        = true
+  }
+}
+EOF
+
 # Criar terraform.tfvars antes do terraform init
 cat > "${CLIENT_DIR}/terraform.tfvars" <<EOF
 client = "${CLIENT}"
