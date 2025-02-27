@@ -350,18 +350,12 @@ resource "aws_lb_listener" "http" {
   }
 }
 
-# Buscar o certificado ACM da região us-east-1
-data "aws_acm_certificate" "salesbox" {
-  provider = aws.us-east-1
-  arn      = "arn:aws:acm:us-east-1:814491614198:certificate/071fc124-cbf6-4637-95a9-a6fd69ac7fda"
-}
-
 resource "aws_lb_listener" "https" {
   load_balancer_arn = aws_lb.main.arn
   port              = "443"
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-2016-08"
-  certificate_arn   = data.aws_acm_certificate.salesbox.arn
+  certificate_arn   = "arn:aws:acm:us-east-1:814491614198:certificate/071fc124-cbf6-4637-95a9-a6fd69ac7fda"
 
   default_action {
     type             = "forward"
