@@ -23,6 +23,10 @@ on:
           - 'us-east-2'  # Ohio (recomendado)
           - 'us-east-1'  # Virginia
           - 'us-west-2'  # Oregon
+      custom_logo_url:
+        description: 'URL do logo personalizado'
+        required: false
+        type: string
 
 jobs:
   prepare:
@@ -41,6 +45,7 @@ jobs:
             echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
             echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
             echo "aws_region=${{ github.event.inputs.aws_region }}" >> $GITHUB_OUTPUT
+            echo "custom_logo_url=${{ github.event.inputs.custom_logo_url }}" >> $GITHUB_OUTPUT
           else
             BRANCH=${{ github.ref }}
             if [[ $BRANCH == refs/heads/clients/* ]]; then
@@ -50,6 +55,7 @@ jobs:
               echo "environment=$ENV" >> $GITHUB_OUTPUT
               echo "version=latest" >> $GITHUB_OUTPUT
               echo "aws_region=us-east-2" >> $GITHUB_OUTPUT
+              echo "custom_logo_url=" >> $GITHUB_OUTPUT
             fi
           fi
 
@@ -77,6 +83,7 @@ jobs:
           echo "VERSION=${{ needs.prepare.outputs.version }}" >> $GITHUB_ENV
           echo "AWS_REGION=${{ needs.prepare.outputs.aws_region }}" >> $GITHUB_ENV
           echo "ECR_REPOSITORY=mautic-${{ needs.prepare.outputs.client }}-${{ needs.prepare.outputs.environment }}" >> $GITHUB_ENV
+          echo "MAUTIC_CUSTOM_LOGO_URL=${{ github.event.inputs.custom_logo_url }}" >> $GITHUB_ENV
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v1
