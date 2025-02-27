@@ -220,35 +220,6 @@ resource "aws_security_group" "ecs_tasks" {
   }
 }
 
-# Security Group para EFS
-resource "aws_security_group" "efs" {
-  name        = "${var.project_name}-efs-sg"
-  description = "Security group for EFS mount targets"
-  vpc_id      = var.vpc_id
-
-  ingress {
-    from_port       = 2049
-    to_port         = 2049
-    protocol        = "tcp"
-    security_groups = [aws_security_group.ecs_tasks.id]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = merge(var.tags, {
-    Name = "${var.project_name}-efs-sg"
-  })
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
 # Buscar o log group existente em vez de tentar criar um novo
 data "aws_cloudwatch_log_group" "ecs" {
   name = "/ecs/${var.project_name}"
