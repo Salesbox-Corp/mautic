@@ -137,6 +137,36 @@ EOF
         sleep 30
     fi
     
+    # Remover registro DNS se existir
+    DOMAIN="salesbox.com.br"
+    HOSTED_ZONE_ID="Z030834419BDWDHKI97GN"
+    RECORD_NAME="${SUBDOMAIN}.${DOMAIN}"
+    
+    echo "Verificando e removendo registro DNS ${RECORD_NAME}..."
+    if aws route53 list-resource-record-sets \
+        --hosted-zone-id ${HOSTED_ZONE_ID} \
+        --query "ResourceRecordSets[?Name == '${RECORD_NAME}.']" \
+        --output text | grep -q "${RECORD_NAME}"; then
+        
+        echo "Removendo registro DNS ${RECORD_NAME}..."
+        aws route53 change-resource-record-sets \
+            --hosted-zone-id ${HOSTED_ZONE_ID} \
+            --change-batch "{
+                \"Changes\": [{
+                    \"Action\": \"DELETE\",
+                    \"ResourceRecordSet\": {
+                        \"Name\": \"${RECORD_NAME}\",
+                        \"Type\": \"A\",
+                        \"AliasTarget\": {
+                            \"HostedZoneId\": \"${HOSTED_ZONE_ID}\",
+                            \"DNSName\": \"${LB_ARN}\",
+                            \"EvaluateTargetHealth\": false
+                        }
+                    }
+                }]
+            }" || true
+    fi
+    
     echo "Limpeza de recursos concluída"
 }
 
@@ -396,100 +426,33 @@ fi
 echo "Preparando configuração Terraform..."
 mkdir -p "${CLIENT_DIR}"
 
-# Exportar variáveis para o template
-export CLIENT ENVIRONMENT AWS_REGION RDS_ENDPOINT DB_NAME DB_USER ECR_REPO_URL ECR_EXISTS
-envsubst < terraform/templates/client-minimal/terraform.tfvars > "${CLIENT_DIR}/terraform.tfvars"
-
-# Copiar arquivos do template
-cp terraform/templates/client-minimal/main.tf "${CLIENT_DIR}/"
-sed -i '/^provider "aws" {/,/^}/d' "${CLIENT_DIR}/main.tf"
-cp terraform/templates/client-minimal/variables.tf "${CLIENT_DIR}/"
-
-# Remover qualquer referência ao módulo shared_vpc
-find "${CLIENT_DIR}" -type f -name "*.tf" -exec sed -i '/module.*"shared_vpc"/,/^}/d' {} \;
-
-# Criar provider.tf e backend.tf
-AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-BUCKET_NAME="mautic-terraform-state-${AWS_ACCOUNT_ID}"
-
-# Criar provider.tf
-cat > "${CLIENT_DIR}/provider.tf" <<EOF
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
-
-# Provider principal para a região do cliente
-provider "aws" {
-  region = var.aws_region
-}
-
-# Provider para recursos que precisam estar em us-east-1 (como ACM)
-provider "aws" {
-  alias  = "us-east-1"
-  region = "us-east-1"
-}
+# Criar terraform.tfvars antes do terraform init
+cat > "${CLIENT_DIR}/terraform.tfvars" <<EOF
+client = "${CLIENT}"
+environment = "${ENVIRONMENT}"
+aws_region = "${AWS_REGION}"
+db_host = "${RDS_ENDPOINT}"
+db_name = "${DB_NAME}"
+db_username = "${DB_USER}"
+custom_logo_url = "${CUSTOM_LOGO_URL}"
+domain = "salesbox.com.br"
+subdomain = "${SUBDOMAIN}"
+hosted_zone_id = "Z030834419BDWDHKI97GN"
 EOF
 
-# Criar backend.tf
-cat > "${CLIENT_DIR}/backend.tf" <<EOF
-terraform {
-  backend "s3" {
-    bucket         = "${BUCKET_NAME}"
-    key            = "${STATE_KEY}"
-    region         = "us-east-1"
-    dynamodb_table = "mautic-terraform-lock"
-    encrypt        = true
-  }
-}
-EOF
+# Inicializar Terraform
+terraform -chdir="${CLIENT_DIR}" init \
+    -backend=true \
+    -backend-config="bucket=mautic-terraform-state" \
+    -backend-config="key=${STATE_KEY}" \
+    -backend-config="region=${AWS_REGION}"
 
-# Função para remover locks do Terraform
-remove_terraform_lock() {
-    local lock_id="$1"
-    local table_name="mautic-terraform-lock"
-    local state_path="$2"
-
-    echo "Tentando remover lock pendente..."
-    aws dynamodb delete-item \
-        --table-name "$table_name" \
-        --key "{\"LockID\": {\"S\": \"$state_path\"}}" \
-        --region "us-east-1"
-    
-    echo "Lock removido com sucesso"
-}
-
-# Atualizar a parte do Terraform para incluir tratamento de lock
-cd "${CLIENT_DIR}"
-terraform init
+# Planejar mudanças
+terraform -chdir="${CLIENT_DIR}" plan \
+    -var-file=terraform.tfvars \
+    -out=tfplan
 
 echo "Planejando alterações..."
-if ! terraform plan -out=tfplan 2>terraform.err; then
-    if grep -q "Error acquiring the state lock" terraform.err; then
-        # Extrair informações do lock
-        LOCK_PATH=$(grep "Path:" terraform.err | awk '{print $2}')
-        
-        echo "Lock detectado no estado. Tentando remover..."
-        remove_terraform_lock "$LOCK_ID" "$LOCK_PATH"
-        
-        # Tentar novamente com lock removido
-        echo "Tentando plan novamente..."
-        if ! terraform plan -out=tfplan; then
-            echo "Erro no planejamento do Terraform mesmo após remover lock"
-            exit 1
-        fi
-    else
-        cat terraform.err
-        echo "Erro no planejamento do Terraform"
-        exit 1
-    fi
-fi
-
-echo "Aplicando alterações..."
 if ! terraform apply tfplan; then
     echo "Erro na aplicação do Terraform"
     exit 1
