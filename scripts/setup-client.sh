@@ -597,24 +597,10 @@ terraform plan -var-file=terraform.tfvars -out=tfplan || {
         -backend-config="key=${STATE_KEY}" \
         -backend-config="region=us-east-1"
     
-    # Se ainda houver problemas, tentar com backend local
+    # Tentar planejar novamente
     if ! terraform plan -var-file=terraform.tfvars -out=tfplan; then
-        echo "Ainda há problemas com o backend S3. Tentando com backend local..."
-        # Criar arquivo de configuração temporário sem backend
-        cat > backend_local.tf <<EOF
-terraform {
-  backend "local" {}
-}
-EOF
-        
-        # Inicializar com backend local
-        terraform init -reconfigure -force-copy
-        
-        # Tentar planejar novamente
-        terraform plan -var-file=terraform.tfvars -out=tfplan || {
-            echo "Não foi possível planejar as mudanças mesmo com backend local."
-            exit 1
-        }
+        echo "Não foi possível planejar as mudanças. Verifique as permissões e configurações do backend."
+        exit 1
     fi
 }
 
@@ -640,7 +626,7 @@ else
         echo "Erro na aplicação do Terraform"
         exit 1
     fi
-fi
+}
 
 # Verificar se o estado foi salvo corretamente
 echo "Verificando estado do Terraform..."
