@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y \
     libc-client-dev \
     libkrb5-dev \
     libmagickwand-dev \
+    curl \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-configure imap --with-kerberos --with-imap-ssl \
     && docker-php-ext-install -j$(nproc) \
@@ -54,4 +55,11 @@ RUN chown -R www-data:www-data .
 # Criar diretório de mídia com permissões corretas
 RUN mkdir -p /var/www/html/media && \
     chown -R www-data:www-data /var/www/html/media && \
-    chmod -R 755 /var/www/html/media 
+    chmod -R 755 /var/www/html/media
+
+# Copiar e configurar script de inicialização
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Definir script de inicialização
+ENTRYPOINT ["docker-entrypoint.sh"] 
