@@ -4,10 +4,12 @@ CLIENT=$1
 ENVIRONMENT=$2
 AWS_REGION=${3:-"us-east-2"}
 CLEAN_RESOURCES=${4:-"false"}
+CUSTOM_LOGO_URL=${5:-""}
 
 if [ -z "$CLIENT" ] || [ -z "$ENVIRONMENT" ]; then
-    echo "Usage: ./setup-client.sh <client_name> <environment> [aws_region] [clean_resources]"
+    echo "Usage: ./setup-client.sh <client_name> <environment> [aws_region] [clean_resources] [custom_logo_url]"
     echo "  clean_resources: 'true' para remover recursos existentes antes de criar novos (default: false)"
+    echo "  custom_logo_url: URL do logo personalizado (opcional)"
     exit 1
 fi
 
@@ -498,4 +500,24 @@ if ! aws ecs describe-clusters --clusters $CLUSTER_NAME --query 'clusters[0].sta
   exit 1
 fi
 
-echo "Setup concluído para ${CLIENT}/${ENVIRONMENT}" 
+echo "Setup concluído para ${CLIENT}/${ENVIRONMENT}"
+
+# Criar arquivo terraform.tfvars
+cat > ${CLIENT_DIR}/terraform.tfvars <<EOF
+client      = "${CLIENT}"
+environment = "${ENVIRONMENT}"
+aws_region  = "${AWS_REGION}"
+project     = "mautic"
+
+# Configurações do banco de dados
+db_host     = "${RDS_ENDPOINT}"
+db_name     = "${DB_NAME}"
+db_username = "${DB_USER}"
+
+# Logo personalizado
+custom_logo_url = "${CUSTOM_LOGO_URL}"
+
+# Recursos computacionais
+task_cpu    = 1024
+task_memory = 2048
+EOF 

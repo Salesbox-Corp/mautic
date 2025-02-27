@@ -24,6 +24,10 @@ on:
           - 'demo'
           - 'staging'
           - 'prd'
+      custom_logo_url:
+        description: 'URL do logo personalizado (opcional, PNG/JPG, 200x50px recomendado)'
+        required: false
+        type: string
       clean_resources:
         description: 'Limpar recursos existentes antes de criar novos'
         required: true
@@ -123,7 +127,8 @@ jobs:
             ${{ github.event.inputs.client }} \
             ${{ github.event.inputs.environment }} \
             ${{ env.AWS_REGION }} \
-            ${{ github.event.inputs.clean_resources }}; then
+            ${{ github.event.inputs.clean_resources }} \
+            "${{ github.event.inputs.custom_logo_url }}"; then
             echo "Erro durante o setup do cliente"
             exit 1
           fi
