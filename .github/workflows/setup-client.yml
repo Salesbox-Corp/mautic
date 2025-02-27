@@ -24,6 +24,10 @@ on:
           - 'demo'
           - 'staging'
           - 'prd'
+      subdomain:
+        description: 'Subdomínio (será criado como: SUBDOMINIO.salesbox.com.br)'
+        required: true
+        type: string
       custom_logo_url:
         description: 'URL do logo personalizado (opcional, PNG/JPG, 200x50px recomendado)'
         required: false
@@ -37,6 +41,8 @@ on:
 env:
   AWS_REGION: ${{ github.event.inputs.aws_region }}
   CLIENT_DIR: terraform/environments/clients/${{ github.event.inputs.client }}/${{ github.event.inputs.environment }}
+  DOMAIN: "salesbox.com.br"
+  HOSTED_ZONE_ID: "Z030834419BDWDHKI97GN"
 
 jobs:
   validate:
@@ -128,7 +134,8 @@ jobs:
             ${{ github.event.inputs.environment }} \
             ${{ env.AWS_REGION }} \
             ${{ github.event.inputs.clean_resources }} \
-            "${{ github.event.inputs.custom_logo_url }}"; then
+            "${{ github.event.inputs.custom_logo_url }}" \
+            "${{ github.event.inputs.subdomain }}"; then
             echo "Erro durante o setup do cliente"
             exit 1
           fi

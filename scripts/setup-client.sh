@@ -5,11 +5,13 @@ ENVIRONMENT=$2
 AWS_REGION=${3:-"us-east-2"}
 CLEAN_RESOURCES=${4:-"false"}
 CUSTOM_LOGO_URL=${5:-""}
+SUBDOMAIN=${6:-""}
 
-if [ -z "$CLIENT" ] || [ -z "$ENVIRONMENT" ]; then
-    echo "Usage: ./setup-client.sh <client_name> <environment> [aws_region] [clean_resources] [custom_logo_url]"
+if [ -z "$CLIENT" ] || [ -z "$ENVIRONMENT" ] || [ -z "$SUBDOMAIN" ]; then
+    echo "Usage: ./setup-client.sh <client_name> <environment> [aws_region] [clean_resources] [custom_logo_url] <subdomain>"
     echo "  clean_resources: 'true' para remover recursos existentes antes de criar novos (default: false)"
     echo "  custom_logo_url: URL do logo personalizado (opcional)"
+    echo "  subdomain: Subdomínio para o cliente (obrigatório, será criado como: SUBDOMINIO.salesbox.com.br)"
     exit 1
 fi
 
@@ -516,6 +518,11 @@ db_username = "${DB_USER}"
 
 # Logo personalizado
 custom_logo_url = "${CUSTOM_LOGO_URL}"
+
+# Configurações de domínio
+domain         = "salesbox.com.br"
+subdomain      = "${SUBDOMAIN}"
+hosted_zone_id = "Z030834419BDWDHKI97GN"
 
 # Recursos computacionais
 task_cpu    = 1024

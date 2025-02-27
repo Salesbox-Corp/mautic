@@ -87,4 +87,21 @@ variable "custom_logo_url" {
   default     = ""  # Se vazio, usa o logo padrão do Mautic
 }
 
+variable "domain" {
+  description = "Domínio principal"
+  type        = string
+  default     = "salesbox.com.br"
+}
+
+variable "subdomain" {
+  description = "Subdomínio para o cliente (será criado como: SUBDOMINIO.salesbox.com.br)"
+  type        = string
+}
+
+variable "hosted_zone_id" {
+  description = "ID da zona hospedada no Route 53"
+  type        = string
+  default     = "Z030834419BDWDHKI97GN"
+}
+
 # ... outras variáveis necessárias ... 

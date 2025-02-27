@@ -184,6 +184,21 @@ variable "use_existing_resources" {
   default     = false
 }
 
+variable "domain" {
+  description = "Domínio principal (ex: salesbox.com.br)"
+  type        = string
+}
+
+variable "subdomain" {
+  description = "Subdomínio para o cliente (será prefixado ao domínio principal)"
+  type        = string
+}
+
+variable "hosted_zone_id" {
+  description = "ID da zona hospedada no Route 53"
+  type        = string
+}
+
 locals {
   secrets_region = coalesce(var.secrets_region, var.aws_region)
 } 
