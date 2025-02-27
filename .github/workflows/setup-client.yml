@@ -33,10 +33,10 @@ on:
         required: false
         type: string
       clean_resources:
-        description: 'Limpar recursos existentes antes de criar novos'
+        description: 'Limpar recursos existentes antes de criar novos (recomendado: true para demo/staging, false para prod)'
         required: true
         type: boolean
-        default: false
+        default: true
 
 env:
   AWS_REGION: ${{ github.event.inputs.aws_region }}

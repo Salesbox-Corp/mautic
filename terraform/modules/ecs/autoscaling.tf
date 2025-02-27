@@ -5,6 +5,8 @@ resource "aws_appautoscaling_target" "ecs" {
   resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.main.name}"
   scalable_dimension = "ecs:service:DesiredCount"
   service_namespace  = "ecs"
+  
+  depends_on = [aws_ecs_service.main]
 }
 
 # Scaling por CPU
@@ -17,13 +19,15 @@ resource "aws_appautoscaling_policy" "cpu" {
 
   target_tracking_scaling_policy_configuration {
     target_value = var.target_cpu_utilization
-    scale_in_cooldown  = 300  # 5 minutos
-    scale_out_cooldown = 180  # 3 minutos
+    scale_in_cooldown  = var.scale_in_cooldown
+    scale_out_cooldown = var.scale_out_cooldown
 
     predefined_metric_specification {
       predefined_metric_type = "ECSServiceAverageCPUUtilization"
     }
   }
+  
+  depends_on = [aws_appautoscaling_target.ecs]
 }
 
 # Scaling por Memória
@@ -36,13 +40,15 @@ resource "aws_appautoscaling_policy" "memory" {
 
   target_tracking_scaling_policy_configuration {
     target_value = var.target_memory_utilization
-    scale_in_cooldown  = 300
-    scale_out_cooldown = 180
+    scale_in_cooldown  = var.scale_in_cooldown
+    scale_out_cooldown = var.scale_out_cooldown
 
     predefined_metric_specification {
       predefined_metric_type = "ECSServiceAverageMemoryUtilization"
     }
   }
+  
+  depends_on = [aws_appautoscaling_target.ecs]
 }
 
 # Scaling por Requisições do ALB
@@ -55,14 +61,16 @@ resource "aws_appautoscaling_policy" "alb" {
 
   target_tracking_scaling_policy_configuration {
     target_value = var.target_alb_request_count
-    scale_in_cooldown  = 300
-    scale_out_cooldown = 180
+    scale_in_cooldown  = var.scale_in_cooldown
+    scale_out_cooldown = var.scale_out_cooldown
 
     predefined_metric_specification {
       predefined_metric_type = "ALBRequestCountPerTarget"
       resource_label        = "${aws_lb.main.arn_suffix}/${aws_lb_target_group.main.arn_suffix}"
     }
   }
+  
+  depends_on = [aws_appautoscaling_target.ecs, aws_lb.main, aws_lb_target_group.main]
 }
 
 # CloudWatch Alarms para monitoramento
@@ -82,6 +90,8 @@ resource "aws_cloudwatch_metric_alarm" "service_cpu_high" {
     ClusterName = aws_ecs_cluster.main.name
     ServiceName = aws_ecs_service.main.name
   }
+  
+  depends_on = [aws_ecs_service.main]
 }
 
 resource "aws_cloudwatch_metric_alarm" "service_memory_high" {
@@ -100,4 +110,6 @@ resource "aws_cloudwatch_metric_alarm" "service_memory_high" {
     ClusterName = aws_ecs_cluster.main.name
     ServiceName = aws_ecs_service.main.name
   }
+  
+  depends_on = [aws_ecs_service.main]
 } 

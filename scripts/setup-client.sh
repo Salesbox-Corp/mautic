@@ -24,6 +24,27 @@ echo "Iniciando setup para ${CLIENT}/${ENVIRONMENT} na região ${AWS_REGION}..."
 clean_existing_resources() {
     echo "Limpando recursos existentes para ${CLIENT}/${ENVIRONMENT}..."
     
+    # Executar terraform destroy primeiro
+    if [ -d "${CLIENT_DIR}" ]; then
+        echo "Executando terraform destroy..."
+        cd "${CLIENT_DIR}"
+        terraform init \
+            -backend-config="bucket=${BUCKET_NAME}" \
+            -backend-config="key=${STATE_KEY}" \
+            -backend-config="region=us-east-1" \
+            -backend-config="dynamodb_table=mautic-terraform-lock" \
+            -backend-config="encrypt=true"
+        
+        terraform destroy -auto-approve \
+            -var="client=${CLIENT}" \
+            -var="environment=${ENVIRONMENT}" \
+            -var="aws_region=${AWS_REGION}" \
+            -var="subdomain=${SUBDOMAIN}" \
+            -var="custom_logo_url=${CUSTOM_LOGO_URL}"
+        
+        cd - > /dev/null
+    fi
+
     # Verificar e remover repositório ECR
     ECR_REPO="mautic-${CLIENT}-${ENVIRONMENT}"
     if aws ecr describe-repositories --repository-names "${ECR_REPO}" >/dev/null 2>&1; then

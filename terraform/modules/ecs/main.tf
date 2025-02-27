@@ -194,17 +194,34 @@ resource "aws_security_group" "alb" {
   }
 }
 
-# Tentar buscar security group existente para tasks ECS
-data "aws_security_group" "ecs_tasks" {
-  count = var.existing_security_group_id == null ? 1 : 0
-  
-  name   = "${var.project_name}-ecs-tasks-sg"
-  vpc_id = var.vpc_id
+# Security Group para tasks ECS
+resource "aws_security_group" "ecs_tasks" {
+  name        = "${var.project_name}-ecs-tasks-sg"
+  description = "Security group for ECS tasks"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(var.tags, {
+    Name = "${var.project_name}-ecs-tasks-sg"
+  })
 }
 
 locals {
-  # Usar o security group existente se fornecido, caso contrário usar o data source
-  ecs_tasks_security_group_id = var.existing_security_group_id != null ? var.existing_security_group_id : data.aws_security_group.ecs_tasks[0].id
+  # Usar o security group criado ou o existente
+  ecs_tasks_security_group_id = coalesce(var.existing_security_group_id, aws_security_group.ecs_tasks.id)
 }
 
 # Buscar o log group existente em vez de tentar criar um novo
@@ -246,11 +263,16 @@ resource "aws_ecs_service" "main" {
   enable_ecs_managed_tags = true
   propagate_tags         = "SERVICE"
   
-  # Garantir que os listeners do ALB sejam criados antes do serviço ECS
+  # Garantir que os listeners do ALB e o security group sejam criados antes do serviço ECS
   depends_on = [
     aws_lb_listener.http,
-    aws_lb_listener.https
+    aws_lb_listener.https,
+    aws_security_group.ecs_tasks
   ]
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # Adicionar target group para o ALB
