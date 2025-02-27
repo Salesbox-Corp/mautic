@@ -168,7 +168,7 @@ module "ecs" {
 # Adicionar políticas necessárias ao execution role
 resource "aws_iam_role_policy" "ecs_execution_ecr" {
   name = "${module.naming.prefix}-ecs-execution-ecr"
-  role = data.aws_iam_role.ecs_execution.id
+  role = var.execution_role_arn != null ? data.aws_iam_role.ecs_execution[0].id : aws_iam_role.ecs_execution[0].id
 
   lifecycle {
     create_before_destroy = true
@@ -199,7 +199,7 @@ resource "aws_iam_role_policy" "ecs_execution_ecr" {
 
 resource "aws_iam_role_policy" "ecs_execution_logs" {
   name = "${module.naming.prefix}-ecs-execution-logs"
-  role = data.aws_iam_role.ecs_execution.id
+  role = var.execution_role_arn != null ? data.aws_iam_role.ecs_execution[0].id : aws_iam_role.ecs_execution[0].id
 
   lifecycle {
     create_before_destroy = true
@@ -228,7 +228,7 @@ resource "aws_iam_role_policy" "ecs_execution_logs" {
 
 resource "aws_iam_role_policy" "ecs_execution_ssm" {
   name = "${module.naming.prefix}-ecs-execution-ssm"
-  role = data.aws_iam_role.ecs_execution.id
+  role = var.execution_role_arn != null ? data.aws_iam_role.ecs_execution[0].id : aws_iam_role.ecs_execution[0].id
 
   lifecycle {
     create_before_destroy = true
@@ -259,7 +259,7 @@ resource "aws_iam_role_policy" "ecs_execution_ssm" {
 # Política para o task role
 resource "aws_iam_role_policy" "ecs_task_permissions" {
   name = "${module.naming.prefix}-ecs-task-permissions"
-  role = data.aws_iam_role.ecs_task.id
+  role = var.task_role_arn != null ? data.aws_iam_role.ecs_task[0].id : aws_iam_role.ecs_task[0].id
 
   lifecycle {
     create_before_destroy = true
