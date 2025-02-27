@@ -579,9 +579,28 @@ if ! aws s3 ls s3://mautic-terraform-state-814491614198/ --region us-east-1 >/de
     echo "Verifique se o usuário atual tem permissões para acessar o bucket mautic-terraform-state-814491614198."
 fi
 
-# Inicializar Terraform com opção de reconfiguracao
+# Remover locks pendentes
+echo "Verificando e removendo locks pendentes..."
+aws dynamodb scan \
+  --table-name mautic-terraform-lock \
+  --region us-east-1 \
+  --projection-expression "LockID" \
+  --filter-expression "contains(LockID, :path)" \
+  --expression-attribute-values '{":path":{"S":"'${STATE_KEY}'"}}' \
+  --query "Items[].LockID.S" \
+  --output text | while read -r lock_id; do
+    if [ ! -z "$lock_id" ]; then
+      echo "Removendo lock: $lock_id"
+      aws dynamodb delete-item \
+        --table-name mautic-terraform-lock \
+        --key "{\"LockID\":{\"S\":\"$lock_id\"}}" \
+        --region us-east-1
+    fi
+  done
+
+# Inicializar Terraform
 echo "Inicializando Terraform..."
-terraform init -reconfigure \
+terraform init \
     -backend=true \
     -backend-config="bucket=mautic-terraform-state-814491614198" \
     -backend-config="key=${STATE_KEY}" \
@@ -591,7 +610,7 @@ terraform init -reconfigure \
 echo "Planejando mudanças..."
 terraform plan -var-file=terraform.tfvars -out=tfplan || {
     echo "Erro ao planejar mudanças. Tentando novamente com inicialização forçada..."
-    terraform init -force-copy -reconfigure \
+    terraform init -force-copy \
         -backend=true \
         -backend-config="bucket=mautic-terraform-state-814491614198" \
         -backend-config="key=${STATE_KEY}" \
