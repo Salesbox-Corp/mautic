@@ -231,11 +231,9 @@ locals {
   ecs_tasks_security_group_id = aws_security_group.ecs_tasks.id
 }
 
-# Criar log group sempre
-resource "aws_cloudwatch_log_group" "ecs" {
-  name              = "/ecs/${var.project_name}"
-  retention_in_days = 30
-  tags              = var.tags
+# Buscar o log group existente em vez de tentar criar um novo
+data "aws_cloudwatch_log_group" "ecs" {
+  name = "/ecs/${var.project_name}"
 }
 
 resource "aws_ecs_service" "main" {
@@ -333,12 +331,53 @@ resource "aws_lb_listener" "http" {
   }
 }
 
+# Criar um novo certificado ACM na região atual
+resource "aws_acm_certificate" "mautic" {
+  domain_name       = "${var.subdomain}.${var.domain}"
+  validation_method = "DNS"
+
+  lifecycle {
+    create_before_destroy = true
+  }
+
+  tags = merge(var.tags, {
+    Name = "${var.project_name}-certificate"
+  })
+}
+
+# Criar registro de validação DNS para o certificado
+resource "aws_route53_record" "cert_validation" {
+  provider = aws.us-east-1  # Route 53 está na região us-east-1
+  for_each = {
+    for dvo in aws_acm_certificate.mautic.domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      record = dvo.resource_record_value
+      type   = dvo.resource_record_type
+    }
+  }
+
+  zone_id = var.hosted_zone_id
+  name    = each.value.name
+  type    = each.value.type
+  records = [each.value.record]
+  ttl     = 60
+}
+
+# Esperar pela validação do certificado
+resource "aws_acm_certificate_validation" "mautic" {
+  certificate_arn         = aws_acm_certificate.mautic.arn
+  validation_record_fqdns = [for record in aws_route53_record.cert_validation : record.fqdn]
+}
+
+# Modificar o listener HTTPS para usar o novo certificado
 resource "aws_lb_listener" "https" {
   load_balancer_arn = aws_lb.main.arn
   port              = "443"
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-2016-08"
-  certificate_arn   = "arn:aws:acm:us-east-1:814491614198:certificate/071fc124-cbf6-4637-95a9-a6fd69ac7fda"
+  
+  # Usar o novo certificado criado na região atual
+  certificate_arn   = aws_acm_certificate_validation.mautic.certificate_arn
 
   default_action {
     type             = "forward"
@@ -346,5 +385,5 @@ resource "aws_lb_listener" "https" {
   }
   
   # Garantir que o target group seja criado antes do listener
-  depends_on = [aws_lb_target_group.main]
+  depends_on = [aws_lb_target_group.main, aws_acm_certificate_validation.mautic]
 } 
