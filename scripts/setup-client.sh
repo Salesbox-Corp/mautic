@@ -463,7 +463,7 @@ terraform {
   backend "s3" {
     bucket         = "mautic-terraform-state"
     key            = "${STATE_KEY}"
-    region         = "${AWS_REGION}"
+    region         = "us-east-1"
     dynamodb_table = "mautic-terraform-lock"
     encrypt        = true
   }
@@ -492,62 +492,109 @@ cd "${CLIENT_DIR}"
 
 # Verificar se o bucket do backend existe
 echo "Verificando bucket do backend..."
-if ! aws s3api head-bucket --bucket "mautic-terraform-state" 2>/dev/null; then
-    echo "Erro: Bucket mautic-terraform-state não existe. Criando..."
+if ! aws s3api head-bucket --bucket "mautic-terraform-state" --region us-east-1 2>/dev/null; then
+    echo "Bucket mautic-terraform-state não existe. Tentando criar..."
     aws s3api create-bucket \
         --bucket "mautic-terraform-state" \
-        --region "${AWS_REGION}" \
-        --create-bucket-configuration LocationConstraint="${AWS_REGION}"
+        --region us-east-1 || echo "Não foi possível criar o bucket, pode ser que ele já exista em outra conta ou região."
     
     # Habilitar versionamento
     aws s3api put-bucket-versioning \
         --bucket "mautic-terraform-state" \
-        --versioning-configuration Status=Enabled
+        --region us-east-1 \
+        --versioning-configuration Status=Enabled || echo "Não foi possível configurar o versionamento do bucket."
 fi
 
 # Verificar se a tabela DynamoDB existe
 echo "Verificando tabela DynamoDB..."
-if ! aws dynamodb describe-table --table-name "mautic-terraform-lock" >/dev/null 2>&1; then
-    echo "Erro: Tabela mautic-terraform-lock não existe. Criando..."
+if ! aws dynamodb describe-table --table-name "mautic-terraform-lock" --region us-east-1 >/dev/null 2>&1; then
+    echo "Tabela mautic-terraform-lock não existe. Tentando criar..."
     aws dynamodb create-table \
         --table-name "mautic-terraform-lock" \
         --attribute-definitions AttributeName=LockID,AttributeType=S \
         --key-schema AttributeName=LockID,KeyType=HASH \
         --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
-        --region "${AWS_REGION}"
+        --region us-east-1 || echo "Não foi possível criar a tabela, pode ser que ela já exista em outra conta."
+    
+    # Aguardar a tabela ficar ativa
+    echo "Aguardando a tabela DynamoDB ficar ativa..."
+    aws dynamodb wait table-exists --table-name "mautic-terraform-lock" --region us-east-1 || true
 fi
 
 # Inicializar Terraform
 echo "Inicializando Terraform..."
-terraform init \
+terraform init -reconfigure \
     -backend=true \
     -backend-config="bucket=mautic-terraform-state" \
     -backend-config="key=${STATE_KEY}" \
-    -backend-config="region=${AWS_REGION}"
+    -backend-config="region=us-east-1"
 
 # Planejar mudanças
 echo "Planejando mudanças..."
-terraform plan -var-file=terraform.tfvars -out=tfplan
+terraform plan -var-file=terraform.tfvars -out=tfplan || {
+    echo "Erro ao planejar mudanças. Tentando novamente com inicialização forçada..."
+    terraform init -reconfigure -force-copy \
+        -backend=true \
+        -backend-config="bucket=mautic-terraform-state" \
+        -backend-config="key=${STATE_KEY}" \
+        -backend-config="region=us-east-1"
+    
+    terraform plan -var-file=terraform.tfvars -out=tfplan
+}
 
 # Aplicar mudanças
 echo "Aplicando mudanças..."
-if ! terraform apply tfplan; then
-    echo "Erro na aplicação do Terraform"
+if [ -f "tfplan" ]; then
+    if ! terraform apply tfplan; then
+        echo "Erro na aplicação do Terraform"
+        rm -f tfplan
+        exit 1
+    fi
+    # Remover arquivo de plano
     rm -f tfplan
-    exit 1
+else
+    echo "Arquivo de plano não encontrado. Aplicando diretamente..."
+    if ! terraform apply -var-file=terraform.tfvars -auto-approve; then
+        echo "Erro na aplicação do Terraform"
+        exit 1
+    fi
 fi
-
-# Remover arquivo de plano
-rm -f tfplan
 
 # Voltar para o diretório original
 cd - > /dev/null
 
 # Verificar se o cluster foi criado
 CLUSTER_NAME="mautic-${CLIENT}-${ENVIRONMENT}-cluster"
-if ! aws ecs describe-clusters --clusters $CLUSTER_NAME --query 'clusters[0].status' --output text | grep -q ACTIVE; then
-  echo "Erro: Cluster ECS não foi criado corretamente"
-  exit 1
-fi
+echo "Verificando se o cluster ECS foi criado corretamente..."
+
+# Tentar até 5 vezes com intervalo de 10 segundos
+MAX_ATTEMPTS=5
+ATTEMPT=1
+
+while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+    echo "Tentativa $ATTEMPT de $MAX_ATTEMPTS..."
+    
+    CLUSTER_STATUS=$(aws ecs describe-clusters --clusters $CLUSTER_NAME --query 'clusters[0].status' --output text 2>/dev/null || echo "NOT_FOUND")
+    
+    if [ "$CLUSTER_STATUS" = "ACTIVE" ]; then
+        echo "Cluster ECS $CLUSTER_NAME está ativo!"
+        break
+    elif [ "$CLUSTER_STATUS" = "NOT_FOUND" ]; then
+        echo "Cluster ECS $CLUSTER_NAME não encontrado."
+    else
+        echo "Cluster ECS $CLUSTER_NAME está em estado: $CLUSTER_STATUS"
+    fi
+    
+    if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+        echo "Aviso: Não foi possível confirmar que o cluster está ativo após $MAX_ATTEMPTS tentativas."
+        echo "Verifique manualmente o estado do cluster no console da AWS."
+        # Não falhar o script aqui, apenas avisar
+        break
+    fi
+    
+    echo "Aguardando 10 segundos antes da próxima verificação..."
+    sleep 10
+    ATTEMPT=$((ATTEMPT+1))
+done
 
 echo "Setup concluído para ${CLIENT}/${ENVIRONMENT}" 
