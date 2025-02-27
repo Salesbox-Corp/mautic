@@ -475,6 +475,7 @@ cat > "${CLIENT_DIR}/terraform.tfvars" <<EOF
 client = "${CLIENT}"
 environment = "${ENVIRONMENT}"
 aws_region = "${AWS_REGION}"
+project = "mautic"
 db_host = "${RDS_ENDPOINT}"
 db_name = "${DB_NAME}"
 db_username = "${DB_USER}"
@@ -482,25 +483,65 @@ custom_logo_url = "${CUSTOM_LOGO_URL}"
 domain = "salesbox.com.br"
 subdomain = "${SUBDOMAIN}"
 hosted_zone_id = "Z030834419BDWDHKI97GN"
+task_cpu = 1024
+task_memory = 2048
 EOF
 
+# Mudar para o diretório do cliente
+cd "${CLIENT_DIR}"
+
+# Verificar se o bucket do backend existe
+echo "Verificando bucket do backend..."
+if ! aws s3api head-bucket --bucket "mautic-terraform-state" 2>/dev/null; then
+    echo "Erro: Bucket mautic-terraform-state não existe. Criando..."
+    aws s3api create-bucket \
+        --bucket "mautic-terraform-state" \
+        --region "${AWS_REGION}" \
+        --create-bucket-configuration LocationConstraint="${AWS_REGION}"
+    
+    # Habilitar versionamento
+    aws s3api put-bucket-versioning \
+        --bucket "mautic-terraform-state" \
+        --versioning-configuration Status=Enabled
+fi
+
+# Verificar se a tabela DynamoDB existe
+echo "Verificando tabela DynamoDB..."
+if ! aws dynamodb describe-table --table-name "mautic-terraform-lock" >/dev/null 2>&1; then
+    echo "Erro: Tabela mautic-terraform-lock não existe. Criando..."
+    aws dynamodb create-table \
+        --table-name "mautic-terraform-lock" \
+        --attribute-definitions AttributeName=LockID,AttributeType=S \
+        --key-schema AttributeName=LockID,KeyType=HASH \
+        --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+        --region "${AWS_REGION}"
+fi
+
 # Inicializar Terraform
-terraform -chdir="${CLIENT_DIR}" init \
+echo "Inicializando Terraform..."
+terraform init \
     -backend=true \
     -backend-config="bucket=mautic-terraform-state" \
     -backend-config="key=${STATE_KEY}" \
     -backend-config="region=${AWS_REGION}"
 
 # Planejar mudanças
-terraform -chdir="${CLIENT_DIR}" plan \
-    -var-file=terraform.tfvars \
-    -out=tfplan
+echo "Planejando mudanças..."
+terraform plan -var-file=terraform.tfvars -out=tfplan
 
-echo "Planejando alterações..."
+# Aplicar mudanças
+echo "Aplicando mudanças..."
 if ! terraform apply tfplan; then
     echo "Erro na aplicação do Terraform"
+    rm -f tfplan
     exit 1
 fi
+
+# Remover arquivo de plano
+rm -f tfplan
+
+# Voltar para o diretório original
+cd - > /dev/null
 
 # Verificar se o cluster foi criado
 CLUSTER_NAME="mautic-${CLIENT}-${ENVIRONMENT}-cluster"
@@ -509,29 +550,4 @@ if ! aws ecs describe-clusters --clusters $CLUSTER_NAME --query 'clusters[0].sta
   exit 1
 fi
 
-echo "Setup concluído para ${CLIENT}/${ENVIRONMENT}"
-
-# Criar arquivo terraform.tfvars
-cat > ${CLIENT_DIR}/terraform.tfvars <<EOF
-client      = "${CLIENT}"
-environment = "${ENVIRONMENT}"
-aws_region  = "${AWS_REGION}"
-project     = "mautic"
-
-# Configurações do banco de dados
-db_host     = "${RDS_ENDPOINT}"
-db_name     = "${DB_NAME}"
-db_username = "${DB_USER}"
-
-# Logo personalizado
-custom_logo_url = "${CUSTOM_LOGO_URL}"
-
-# Configurações de domínio
-domain         = "salesbox.com.br"
-subdomain      = "${SUBDOMAIN}"
-hosted_zone_id = "Z030834419BDWDHKI97GN"
-
-# Recursos computacionais
-task_cpu    = 1024
-task_memory = 2048
-EOF 
+echo "Setup concluído para ${CLIENT}/${ENVIRONMENT}" 
