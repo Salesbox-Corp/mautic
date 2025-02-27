@@ -288,6 +288,12 @@ resource "aws_ecs_service" "main" {
   # Configuração de auto scaling
   enable_ecs_managed_tags = true
   propagate_tags         = "SERVICE"
+  
+  # Garantir que os listeners do ALB sejam criados antes do serviço ECS
+  depends_on = [
+    aws_lb_listener.http,
+    aws_lb_listener.https
+  ]
 }
 
 # Adicionar target group para o ALB
@@ -309,6 +315,9 @@ resource "aws_lb_target_group" "main" {
   }
 
   tags = var.tags
+  
+  # Garantir que o ALB seja criado antes do target group
+  depends_on = [aws_lb.main]
 }
 
 # Configuração do Route 53
@@ -341,15 +350,24 @@ resource "aws_lb_listener" "http" {
   }
 }
 
+# Buscar o certificado ACM da região us-east-1
+data "aws_acm_certificate" "salesbox" {
+  provider = aws.us-east-1
+  arn      = "arn:aws:acm:us-east-1:814491614198:certificate/071fc124-cbf6-4637-95a9-a6fd69ac7fda"
+}
+
 resource "aws_lb_listener" "https" {
   load_balancer_arn = aws_lb.main.arn
   port              = "443"
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-2016-08"
-  certificate_arn   = "arn:aws:acm:us-east-1:814491614198:certificate/071fc124-cbf6-4637-95a9-a6fd69ac7fda"
+  certificate_arn   = data.aws_acm_certificate.salesbox.arn
 
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.main.arn
   }
+  
+  # Garantir que o target group seja criado antes do listener
+  depends_on = [aws_lb_target_group.main]
 } 
