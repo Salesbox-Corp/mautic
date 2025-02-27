@@ -469,7 +469,7 @@ EOF
 cat > "${CLIENT_DIR}/backend.tf" <<EOF
 terraform {
   backend "s3" {
-    bucket         = "mautic-terraform-state"
+    bucket         = "mautic-terraform-state-814491614198"
     key            = "${STATE_KEY}"
     region         = "us-east-1"  # Região fixa para o bucket de estado
     dynamodb_table = "mautic-terraform-lock"
@@ -509,12 +509,12 @@ echo "Conta AWS: ${AWS_ACCOUNT_ID}"
 
 # Verificar permissões para S3
 echo "Verificando permissões para S3..."
-if ! aws s3api get-bucket-policy --bucket mautic-terraform-state --region us-east-1 >/dev/null 2>&1; then
+if ! aws s3api get-bucket-policy --bucket mautic-terraform-state-814491614198 --region us-east-1 >/dev/null 2>&1; then
     echo "AVISO: Não foi possível obter a política do bucket. Tentando configurar permissões..."
     
     # Tentar configurar permissões do bucket
     aws s3api put-bucket-policy \
-        --bucket mautic-terraform-state \
+        --bucket mautic-terraform-state-814491614198 \
         --region us-east-1 \
         --policy "{
             \"Version\": \"2012-10-17\",
@@ -531,8 +531,8 @@ if ! aws s3api get-bucket-policy --bucket mautic-terraform-state --region us-eas
                         \"s3:ListBucket\"
                     ],
                     \"Resource\": [
-                        \"arn:aws:s3:::mautic-terraform-state\",
-                        \"arn:aws:s3:::mautic-terraform-state/*\"
+                        \"arn:aws:s3:::mautic-terraform-state-814491614198\",
+                        \"arn:aws:s3:::mautic-terraform-state-814491614198/*\"
                     ]
                 }
             ]
@@ -541,16 +541,16 @@ fi
 
 # Verificar se o bucket do backend existe
 echo "Verificando bucket do backend na região us-east-1..."
-if ! aws s3api head-bucket --bucket "mautic-terraform-state" --region us-east-1 2>/dev/null; then
-    echo "Bucket mautic-terraform-state não existe. Tentando criar na região us-east-1..."
+if ! aws s3api head-bucket --bucket "mautic-terraform-state-814491614198" --region us-east-1 2>/dev/null; then
+    echo "Bucket mautic-terraform-state-814491614198 não existe. Tentando criar na região us-east-1..."
     # Para us-east-1, não devemos especificar LocationConstraint
     aws s3api create-bucket \
-        --bucket "mautic-terraform-state" \
+        --bucket "mautic-terraform-state-814491614198" \
         --region us-east-1 || echo "Não foi possível criar o bucket, pode ser que ele já exista em outra conta."
     
     # Habilitar versionamento
     aws s3api put-bucket-versioning \
-        --bucket "mautic-terraform-state" \
+        --bucket "mautic-terraform-state-814491614198" \
         --region us-east-1 \
         --versioning-configuration Status=Enabled || echo "Não foi possível configurar o versionamento do bucket."
 fi
@@ -574,16 +574,16 @@ fi
 # Verificar permissões no bucket
 echo "Verificando permissões no bucket S3..."
 # Tentar listar objetos para verificar permissões
-if ! aws s3 ls s3://mautic-terraform-state/ --region us-east-1 >/dev/null 2>&1; then
+if ! aws s3 ls s3://mautic-terraform-state-814491614198/ --region us-east-1 >/dev/null 2>&1; then
     echo "AVISO: Não foi possível listar objetos no bucket. Pode haver problemas de permissão."
-    echo "Verifique se o usuário atual tem permissões para acessar o bucket mautic-terraform-state."
+    echo "Verifique se o usuário atual tem permissões para acessar o bucket mautic-terraform-state-814491614198."
 fi
 
 # Inicializar Terraform com opção de migração de estado
 echo "Inicializando Terraform..."
 terraform init -reconfigure -migrate-state \
     -backend=true \
-    -backend-config="bucket=mautic-terraform-state" \
+    -backend-config="bucket=mautic-terraform-state-814491614198" \
     -backend-config="key=${STATE_KEY}" \
     -backend-config="region=us-east-1"
 
@@ -593,7 +593,7 @@ terraform plan -var-file=terraform.tfvars -out=tfplan || {
     echo "Erro ao planejar mudanças. Tentando novamente com inicialização forçada..."
     terraform init -reconfigure -force-copy -migrate-state \
         -backend=true \
-        -backend-config="bucket=mautic-terraform-state" \
+        -backend-config="bucket=mautic-terraform-state-814491614198" \
         -backend-config="key=${STATE_KEY}" \
         -backend-config="region=us-east-1"
     
