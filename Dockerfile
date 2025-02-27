@@ -13,8 +13,10 @@ RUN apt-get update && apt-get install -y \
     libkrb5-dev \
     libmagickwand-dev \
     curl \
+    libicu-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-configure imap --with-kerberos --with-imap-ssl \
+    && docker-php-ext-configure intl \
     && docker-php-ext-install -j$(nproc) \
     pdo_mysql \
     zip \
@@ -22,13 +24,15 @@ RUN apt-get update && apt-get install -y \
     imap \
     opcache \
     bcmath \
-    sockets
+    sockets \
+    intl
 
 # Configurar PHP
 RUN echo "memory_limit=512M" > /usr/local/etc/php/conf.d/memory-limit.ini \
     && echo "upload_max_filesize=128M" >> /usr/local/etc/php/conf.d/memory-limit.ini \
     && echo "post_max_size=128M" >> /usr/local/etc/php/conf.d/memory-limit.ini \
-    && echo "max_execution_time=300" >> /usr/local/etc/php/conf.d/memory-limit.ini
+    && echo "max_execution_time=300" >> /usr/local/etc/php/conf.d/memory-limit.ini \
+    && echo "zend.assertions=-1" >> /usr/local/etc/php/conf.d/memory-limit.ini
 
 # Instalar Node.js e npm
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
