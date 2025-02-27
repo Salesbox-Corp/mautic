@@ -24,7 +24,7 @@ on:
           - 'us-east-1'  # Virginia
           - 'us-west-2'  # Oregon
       custom_logo_url:
-        description: 'URL do logo personalizado'
+        description: 'URL do logo personalizado (opcional - será salvo para futuros deploys)'
         required: false
         type: string
 
@@ -83,7 +83,44 @@ jobs:
           echo "VERSION=${{ needs.prepare.outputs.version }}" >> $GITHUB_ENV
           echo "AWS_REGION=${{ needs.prepare.outputs.aws_region }}" >> $GITHUB_ENV
           echo "ECR_REPOSITORY=mautic-${{ needs.prepare.outputs.client }}-${{ needs.prepare.outputs.environment }}" >> $GITHUB_ENV
-          echo "MAUTIC_CUSTOM_LOGO_URL=${{ github.event.inputs.custom_logo_url }}" >> $GITHUB_ENV
+          
+          # Criar diretório e arquivo de configuração se não existirem
+          mkdir -p clients
+          if [ ! -f clients/config.json ]; then
+            echo '{"clients":{}}' > clients/config.json
+          fi
+          
+          # Se uma URL personalizada foi fornecida, salvar no config.json
+          if [ ! -z "${{ github.event.inputs.custom_logo_url }}" ]; then
+            LOGO_URL="${{ github.event.inputs.custom_logo_url }}"
+            # Verificar se o cliente já existe no config.json
+            if jq -e ".clients.\"${{ needs.prepare.outputs.client }}\"" clients/config.json > /dev/null; then
+              # Cliente existe, atualizar logo_url
+              jq --arg logo "$LOGO_URL" --arg client "${{ needs.prepare.outputs.client }}" '.clients[$client].logo_url = $logo' clients/config.json > clients/config.json.tmp
+            else
+              # Cliente não existe, criar novo
+              jq --arg logo "$LOGO_URL" --arg client "${{ needs.prepare.outputs.client }}" '.clients[$client] = {"logo_url": $logo, "environments": {"demo": {}, "staging": {}, "prd": {}}}' clients/config.json > clients/config.json.tmp
+            fi
+            mv clients/config.json.tmp clients/config.json
+            echo "MAUTIC_CUSTOM_LOGO_URL=$LOGO_URL" >> $GITHUB_ENV
+            
+            # Configurar Git
+            git config --global user.name "GitHub Actions Bot"
+            git config --global user.email "actions@github.com"
+            
+            # Commit e push das alterações
+            git add clients/config.json
+            git commit -m "chore: atualiza logo_url para cliente ${{ needs.prepare.outputs.client }}"
+            git push origin HEAD:main
+          else
+            # Tentar ler logo_url do config.json
+            if [ -f clients/config.json ]; then
+              CLIENT_LOGO_URL=$(jq -r ".clients.\"${{ needs.prepare.outputs.client }}\".logo_url" clients/config.json)
+              if [ "$CLIENT_LOGO_URL" != "null" ]; then
+                echo "MAUTIC_CUSTOM_LOGO_URL=$CLIENT_LOGO_URL" >> $GITHUB_ENV
+              fi
+            fi
+          fi
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v1

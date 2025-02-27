@@ -1,0 +1,13 @@
+{
+    "clients": {
+        "exemplo-cliente": {
+            "name": "Exemplo Cliente",
+            "logo_url": "https://exemplo.com/logo.png",
+            "environments": {
+                "demo": {},
+                "staging": {},
+                "prd": {}
+            }
+        }
+    }
+}
