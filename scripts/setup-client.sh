@@ -579,9 +579,9 @@ if ! aws s3 ls s3://mautic-terraform-state-814491614198/ --region us-east-1 >/de
     echo "Verifique se o usuário atual tem permissões para acessar o bucket mautic-terraform-state-814491614198."
 fi
 
-# Inicializar Terraform com opção de migração de estado
+# Inicializar Terraform com opção de reconfiguracao
 echo "Inicializando Terraform..."
-terraform init -reconfigure -migrate-state \
+terraform init -reconfigure \
     -backend=true \
     -backend-config="bucket=mautic-terraform-state-814491614198" \
     -backend-config="key=${STATE_KEY}" \
@@ -591,7 +591,7 @@ terraform init -reconfigure -migrate-state \
 echo "Planejando mudanças..."
 terraform plan -var-file=terraform.tfvars -out=tfplan || {
     echo "Erro ao planejar mudanças. Tentando novamente com inicialização forçada..."
-    terraform init -reconfigure -force-copy -migrate-state \
+    terraform init -force-copy -reconfigure \
         -backend=true \
         -backend-config="bucket=mautic-terraform-state-814491614198" \
         -backend-config="key=${STATE_KEY}" \
