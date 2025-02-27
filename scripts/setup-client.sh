@@ -645,7 +645,7 @@ else
         echo "Erro na aplicação do Terraform"
         exit 1
     fi
-}
+fi
 
 # Verificar se o estado foi salvo corretamente
 echo "Verificando estado do Terraform..."
