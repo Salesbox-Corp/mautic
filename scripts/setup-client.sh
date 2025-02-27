@@ -24,26 +24,96 @@ echo "Iniciando setup para ${CLIENT}/${ENVIRONMENT} na região ${AWS_REGION}..."
 clean_existing_resources() {
     echo "Limpando recursos existentes para ${CLIENT}/${ENVIRONMENT}..."
     
-    # Executar terraform destroy primeiro
-    if [ -d "${CLIENT_DIR}" ]; then
-        echo "Executando terraform destroy..."
-        cd "${CLIENT_DIR}"
-        terraform init \
-            -backend-config="bucket=${BUCKET_NAME}" \
-            -backend-config="key=${STATE_KEY}" \
-            -backend-config="region=us-east-1" \
-            -backend-config="dynamodb_table=mautic-terraform-lock" \
-            -backend-config="encrypt=true"
-        
-        terraform destroy -auto-approve \
-            -var="client=${CLIENT}" \
-            -var="environment=${ENVIRONMENT}" \
-            -var="aws_region=${AWS_REGION}" \
-            -var="subdomain=${SUBDOMAIN}" \
-            -var="custom_logo_url=${CUSTOM_LOGO_URL}"
-        
-        cd - > /dev/null
-    fi
+    # Primeiro, preparar os arquivos Terraform
+    echo "Preparando arquivos Terraform para destroy..."
+    mkdir -p "${CLIENT_DIR}"
+    
+    # Copiar arquivos do template
+    cp terraform/templates/client-minimal/main.tf "${CLIENT_DIR}/"
+    cp terraform/templates/client-minimal/variables.tf "${CLIENT_DIR}/"
+    
+    # Criar diretório de módulos e copiar módulos
+    mkdir -p "${CLIENT_DIR}/modules"
+    cp -r terraform/modules/* "${CLIENT_DIR}/modules/"
+    
+    # Criar provider.tf
+    cat > "${CLIENT_DIR}/provider.tf" <<EOF
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+# Provider principal para a região do cliente
+provider "aws" {
+  region = var.aws_region
+}
+
+# Provider específico para Route 53 (sempre em us-east-1)
+provider "aws" {
+  alias  = "us-east-1"
+  region = "us-east-1"
+}
+
+# Provider para ACM (certificados) em us-east-1
+provider "aws" {
+  alias  = "acm"
+  region = "us-east-1"
+}
+EOF
+
+    # Criar backend.tf
+    cat > "${CLIENT_DIR}/backend.tf" <<EOF
+terraform {
+  backend "s3" {
+    bucket         = "mautic-terraform-state-814491614198"
+    key            = "${STATE_KEY}"
+    region         = "us-east-1"  # Região fixa para o bucket de estado
+    dynamodb_table = "mautic-terraform-lock"
+    encrypt        = true
+  }
+}
+EOF
+
+    # Criar terraform.tfvars
+    cat > "${CLIENT_DIR}/terraform.tfvars" <<EOF
+client = "${CLIENT}"
+environment = "${ENVIRONMENT}"
+aws_region = "${AWS_REGION}"
+project = "mautic"
+db_host = "${RDS_ENDPOINT}"
+db_name = "${DB_NAME}"
+db_username = "${DB_USER}"
+custom_logo_url = "${CUSTOM_LOGO_URL}"
+domain = "salesbox.com.br"
+subdomain = "${SUBDOMAIN}"
+hosted_zone_id = "Z030834419BDWDHKI97GN"
+task_cpu = 1024
+task_memory = 2048
+ecr_exists = "${ECR_EXISTS}"
+EOF
+
+    # Executar terraform destroy
+    echo "Executando terraform destroy..."
+    cd "${CLIENT_DIR}"
+    terraform init \
+        -backend-config="bucket=${BUCKET_NAME}" \
+        -backend-config="key=${STATE_KEY}" \
+        -backend-config="region=us-east-1" \
+        -backend-config="dynamodb_table=mautic-terraform-lock" \
+        -backend-config="encrypt=true"
+    
+    terraform destroy -auto-approve \
+        -var="client=${CLIENT}" \
+        -var="environment=${ENVIRONMENT}" \
+        -var="aws_region=${AWS_REGION}" \
+        -var="subdomain=${SUBDOMAIN}" \
+        -var="custom_logo_url=${CUSTOM_LOGO_URL}"
+    
+    cd - > /dev/null
 
     # Verificar e remover repositório ECR
     ECR_REPO="mautic-${CLIENT}-${ENVIRONMENT}"
