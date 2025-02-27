@@ -96,6 +96,7 @@ module "ecs" {
   tags              = module.naming.tags
   client            = var.client
   environment       = var.environment
+  custom_logo_url   = var.custom_logo_url
   
   execution_role_arn = data.aws_iam_role.ecs_execution.arn
   task_role_arn      = data.aws_iam_role.ecs_task.arn
@@ -113,6 +114,10 @@ module "ecs" {
 resource "aws_iam_role_policy" "ecs_execution_ecr" {
   name = "${module.naming.prefix}-ecs-execution-ecr"
   role = data.aws_iam_role.ecs_execution.id
+
+  lifecycle {
+    create_before_destroy = true
+  }
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -141,6 +146,10 @@ resource "aws_iam_role_policy" "ecs_execution_logs" {
   name = "${module.naming.prefix}-ecs-execution-logs"
   role = data.aws_iam_role.ecs_execution.id
 
+  lifecycle {
+    create_before_destroy = true
+  }
+
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -165,6 +174,10 @@ resource "aws_iam_role_policy" "ecs_execution_logs" {
 resource "aws_iam_role_policy" "ecs_execution_ssm" {
   name = "${module.naming.prefix}-ecs-execution-ssm"
   role = data.aws_iam_role.ecs_execution.id
+
+  lifecycle {
+    create_before_destroy = true
+  }
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -192,6 +205,10 @@ resource "aws_iam_role_policy" "ecs_execution_ssm" {
 resource "aws_iam_role_policy" "ecs_task_permissions" {
   name = "${module.naming.prefix}-ecs-task-permissions"
   role = data.aws_iam_role.ecs_task.id
+
+  lifecycle {
+    create_before_destroy = true
+  }
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -228,10 +245,16 @@ resource "aws_security_group" "ecs_tasks" {
   description = "Security group for ECS tasks"
   vpc_id      = local.vpc_id
 
+  lifecycle {
+    create_before_destroy = true
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  depends_on = [module.ecs]
 } 

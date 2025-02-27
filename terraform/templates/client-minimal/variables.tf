@@ -81,4 +81,10 @@ variable "ecr_exists" {
   default     = "false"
 }
 
+variable "custom_logo_url" {
+  description = "URL da imagem do logo personalizado para o Mautic. Deve ser uma URL pública acessível. Recomendado: imagem PNG ou JPG com dimensões de 200x50 pixels."
+  type        = string
+  default     = ""  # Se vazio, usa o logo padrão do Mautic
+}
+
 # ... outras variáveis necessárias ... 

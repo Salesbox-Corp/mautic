@@ -172,6 +172,12 @@ variable "secrets_region" {
   default     = null  # Se null, usa a mesma região do provider principal
 }
 
+variable "custom_logo_url" {
+  description = "URL da imagem personalizada para o logo do Mautic. Deve ser uma URL pública acessível."
+  type        = string
+  default     = ""
+}
+
 locals {
   secrets_region = coalesce(var.secrets_region, var.aws_region)
 } 

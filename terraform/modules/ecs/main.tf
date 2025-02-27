@@ -94,6 +94,30 @@ resource "aws_ecs_task_definition" "mautic" {
           {
             name  = "MAUTIC_ADMIN_EMAIL"
             value = local.client_credentials["mautic_admin_email"]
+          },
+          {
+            name  = "MAUTIC_INSTALL_SOURCE"
+            value = "TERRAFORM"
+          },
+          {
+            name  = "MAUTIC_TABLE_PREFIX"
+            value = ""
+          },
+          {
+            name  = "MAUTIC_DB_PORT"
+            value = "3306"
+          },
+          {
+            name  = "MAUTIC_DB_PREFIX"
+            value = ""
+          },
+          {
+            name  = "MAUTIC_SKIP_INSTALL"
+            value = "true"
+          },
+          {
+            name  = "MAUTIC_CUSTOM_LOGO_URL"
+            value = var.custom_logo_url
           }
         ],
         var.container_environment
@@ -142,8 +166,8 @@ resource "aws_ecs_service" "main" {
 
   # Configuração de rede
   network_configuration {
-    subnets         = var.subnet_ids
-    security_groups = [aws_security_group.ecs_tasks.id]
+    subnets          = var.subnet_ids
+    security_groups  = [aws_security_group.ecs_tasks.id]
     assign_public_ip = true
   }
 
@@ -164,13 +188,59 @@ resource "aws_ecs_service" "main" {
 }
 
 resource "aws_security_group" "ecs_tasks" {
-  vpc_id = var.vpc_id
-  # ... resto da configuração ...
+  name        = "${var.project_name}-ecs-tasks"
+  description = "Security group for ECS tasks"
+  vpc_id      = var.vpc_id
+
+  # Permitir todo tráfego de saída
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Permitir tráfego de entrada do ALB
+  ingress {
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  tags = var.tags
 }
 
 resource "aws_security_group" "alb" {
-  vpc_id = var.vpc_id
-  # ... resto da configuração ...
+  name        = "${var.project_name}-alb"
+  description = "Security group for Application Load Balancer"
+  vpc_id      = var.vpc_id
+
+  # Permitir tráfego de entrada HTTP
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Permitir tráfego de entrada HTTPS
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Permitir todo tráfego de saída
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = var.tags
 }
 
 # Adicionar target group para o ALB
@@ -204,4 +274,10 @@ resource "aws_lb_listener" "http" {
     type             = "forward"
     target_group_arn = aws_lb_target_group.main.arn
   }
+}
+
+resource "aws_cloudwatch_log_group" "ecs" {
+  name              = "/ecs/${var.project_name}"
+  retention_in_days = 30
+  tags              = var.tags
 } 
