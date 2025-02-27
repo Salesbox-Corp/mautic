@@ -160,9 +160,9 @@ data "aws_security_group" "existing_ecs_tasks" {
   vpc_id = var.vpc_id
 }
 
-# Criar security group apenas se não existir
+# Criar security group apenas se não existir ou use_existing_resources for false
 resource "aws_security_group" "ecs_tasks" {
-  count = var.use_existing_resources ? 0 : 1
+  count = var.use_existing_resources && length(data.aws_security_group.existing_ecs_tasks) > 0 ? 0 : 1
   
   name        = "${var.project_name}-ecs-tasks"
   description = "Security group for ECS tasks"
@@ -192,7 +192,7 @@ resource "aws_security_group" "ecs_tasks" {
 }
 
 locals {
-  ecs_tasks_security_group_id = var.use_existing_resources ? data.aws_security_group.existing_ecs_tasks[0].id : aws_security_group.ecs_tasks[0].id
+  ecs_tasks_security_group_id = var.use_existing_resources && length(data.aws_security_group.existing_ecs_tasks) > 0 ? data.aws_security_group.existing_ecs_tasks[0].id : aws_security_group.ecs_tasks[0].id
 }
 
 # Verificar se o log group já existe
@@ -201,9 +201,9 @@ data "aws_cloudwatch_log_group" "existing_ecs" {
   name  = "/ecs/${var.project_name}"
 }
 
-# Criar log group apenas se não existir
+# Criar log group apenas se não existir ou use_existing_resources for false
 resource "aws_cloudwatch_log_group" "ecs" {
-  count             = var.use_existing_resources ? 0 : 1
+  count             = var.use_existing_resources && length(data.aws_cloudwatch_log_group.existing_ecs) > 0 ? 0 : 1
   name              = "/ecs/${var.project_name}"
   retention_in_days = 30
   tags              = var.tags

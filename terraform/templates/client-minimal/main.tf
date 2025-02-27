@@ -54,13 +54,67 @@ data "aws_subnets" "public" {
 # Obter ID da conta AWS
 data "aws_caller_identity" "current" {}
 
-# Usar data sources para roles existentes ao invés de criar novas
+# Tentar usar roles existentes
 data "aws_iam_role" "ecs_execution" {
-  name = "${module.naming.prefix}-ecs-execution"
+  count = var.execution_role_arn != null ? 1 : 0
+  name  = "${module.naming.prefix}-ecs-execution"
 }
 
 data "aws_iam_role" "ecs_task" {
+  count = var.task_role_arn != null ? 1 : 0
+  name  = "${module.naming.prefix}-ecs-task"
+}
+
+# Criar roles se não existirem
+resource "aws_iam_role" "ecs_execution" {
+  count = var.execution_role_arn == null ? 1 : 0
+  
+  name = "${module.naming.prefix}-ecs-execution"
+  
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = module.naming.tags
+}
+
+resource "aws_iam_role" "ecs_task" {
+  count = var.task_role_arn == null ? 1 : 0
+  
   name = "${module.naming.prefix}-ecs-task"
+  
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = module.naming.tags
+}
+
+locals {
+  execution_role_arn = var.execution_role_arn != null ? var.execution_role_arn : (
+    length(data.aws_iam_role.ecs_execution) > 0 ? data.aws_iam_role.ecs_execution[0].arn : aws_iam_role.ecs_execution[0].arn
+  )
+  task_role_arn = var.task_role_arn != null ? var.task_role_arn : (
+    length(data.aws_iam_role.ecs_task) > 0 ? data.aws_iam_role.ecs_task[0].arn : aws_iam_role.ecs_task[0].arn
+  )
 }
 
 # Criar repositório ECR apenas se não existir
@@ -99,8 +153,8 @@ module "ecs" {
   custom_logo_url   = var.custom_logo_url
   use_existing_resources = true  # Sempre tentar usar recursos existentes
   
-  execution_role_arn = data.aws_iam_role.ecs_execution.arn
-  task_role_arn      = data.aws_iam_role.ecs_task.arn
+  execution_role_arn = local.execution_role_arn
+  task_role_arn      = local.task_role_arn
   ecr_repository_url = var.ecr_exists == "true" ? data.aws_ecr_repository.existing_mautic[0].repository_url : aws_ecr_repository.mautic[0].repository_url
 
   # Adicionar variáveis do banco de dados
