@@ -194,41 +194,14 @@ resource "aws_security_group" "alb" {
   }
 }
 
-# Criar security group para as tasks ECS
-resource "aws_security_group" "ecs_tasks" {
-  name        = "${var.project_name}-ecs-tasks-sg"
-  description = "Security group for ECS tasks"
-  vpc_id      = var.vpc_id
-
-  # Permitir todo tráfego de saída
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow all outbound traffic"
-  }
-
-  # Permitir tráfego de entrada do ALB
-  ingress {
-    from_port       = 80
-    to_port         = 80
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-    description     = "Allow HTTP traffic from ALB"
-  }
-
-  tags = merge(var.tags, {
-    Name = "${var.project_name}-ecs-tasks-sg"
-  })
-
-  lifecycle {
-    create_before_destroy = true
-  }
+# Buscar security group existente para as tasks ECS em vez de criar um novo
+data "aws_security_group" "ecs_tasks" {
+  name   = "${var.project_name}-ecs-tasks-sg"
+  vpc_id = var.vpc_id
 }
 
 locals {
-  ecs_tasks_security_group_id = aws_security_group.ecs_tasks.id
+  ecs_tasks_security_group_id = data.aws_security_group.ecs_tasks.id
 }
 
 # Buscar o log group existente em vez de tentar criar um novo
