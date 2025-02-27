@@ -152,11 +152,53 @@ resource "aws_lb" "main" {
   tags = var.tags
 }
 
+# Security Group para o ALB
+resource "aws_security_group" "alb" {
+  name        = "${var.project_name}-alb-sg"
+  description = "Security group for Application Load Balancer"
+  vpc_id      = var.vpc_id
+
+  # Permitir tráfego de entrada HTTP
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow HTTP traffic from internet"
+  }
+
+  # Permitir tráfego de entrada HTTPS
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow HTTPS traffic from internet"
+  }
+
+  # Permitir todo tráfego de saída
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow all outbound traffic"
+  }
+
+  tags = merge(var.tags, {
+    Name = "${var.project_name}-alb-sg"
+  })
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
 # Verificar se o security group já existe
 data "aws_security_group" "existing_ecs_tasks" {
   count = var.use_existing_resources ? 1 : 0
   
-  name   = "${var.project_name}-ecs-tasks"
+  name   = "${var.project_name}-ecs-tasks-sg"
   vpc_id = var.vpc_id
 }
 
@@ -164,7 +206,7 @@ data "aws_security_group" "existing_ecs_tasks" {
 resource "aws_security_group" "ecs_tasks" {
   count = var.use_existing_resources && length(data.aws_security_group.existing_ecs_tasks) > 0 ? 0 : 1
   
-  name        = "${var.project_name}-ecs-tasks"
+  name        = "${var.project_name}-ecs-tasks-sg"
   description = "Security group for ECS tasks"
   vpc_id      = var.vpc_id
 
@@ -174,6 +216,7 @@ resource "aws_security_group" "ecs_tasks" {
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow all outbound traffic"
   }
 
   # Permitir tráfego de entrada do ALB
@@ -182,9 +225,12 @@ resource "aws_security_group" "ecs_tasks" {
     to_port         = 80
     protocol        = "tcp"
     security_groups = [aws_security_group.alb.id]
+    description     = "Allow HTTP traffic from ALB"
   }
 
-  tags = var.tags
+  tags = merge(var.tags, {
+    Name = "${var.project_name}-ecs-tasks-sg"
+  })
 
   lifecycle {
     create_before_destroy = true
@@ -244,38 +290,6 @@ resource "aws_ecs_service" "main" {
   propagate_tags         = "SERVICE"
 }
 
-resource "aws_security_group" "alb" {
-  name        = "${var.project_name}-alb"
-  description = "Security group for Application Load Balancer"
-  vpc_id      = var.vpc_id
-
-  # Permitir tráfego de entrada HTTP
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # Permitir tráfego de entrada HTTPS
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # Permitir todo tráfego de saída
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = var.tags
-}
-
 # Adicionar target group para o ALB
 resource "aws_lb_target_group" "main" {
   name        = "${var.project_name}-tg"
@@ -332,7 +346,7 @@ resource "aws_lb_listener" "https" {
   port              = "443"
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-2016-08"
-  certificate_arn   = "arn:aws:acm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:certificate/salesbox-wildcard"  # Usar certificado existente
+  certificate_arn   = "arn:aws:acm:us-east-1:814491614198:certificate/071fc124-cbf6-4637-95a9-a6fd69ac7fda"
 
   default_action {
     type             = "forward"

@@ -13,6 +13,7 @@ resource "aws_security_group" "efs" {
   }
 
   egress {
+    description = "Allow all outbound traffic"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -22,6 +23,10 @@ resource "aws_security_group" "efs" {
   tags = merge(var.tags, {
     Name = "${var.project_name}-efs-sg"
   })
+  
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # EFS File System

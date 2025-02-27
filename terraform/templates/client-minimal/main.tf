@@ -248,7 +248,7 @@ resource "aws_iam_role_policy" "ecs_task_permissions" {
 
 # Security Group para tasks do ECS
 resource "aws_security_group" "ecs_tasks" {
-  name        = "${module.naming.prefix}-ecs-tasks"
+  name        = "${module.naming.prefix}-ecs-tasks-sg"
   description = "Security group for ECS tasks"
   vpc_id      = local.vpc_id
 
@@ -257,11 +257,14 @@ resource "aws_security_group" "ecs_tasks" {
   }
 
   egress {
+    description = "Allow all outbound traffic"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  tags = module.naming.tags
 
   depends_on = [module.ecs]
 } 
