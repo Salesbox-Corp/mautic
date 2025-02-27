@@ -194,14 +194,17 @@ resource "aws_security_group" "alb" {
   }
 }
 
-# Buscar security group existente para as tasks ECS em vez de criar um novo
+# Tentar buscar security group existente para tasks ECS
 data "aws_security_group" "ecs_tasks" {
+  count = var.existing_security_group_id == null ? 1 : 0
+  
   name   = "${var.project_name}-ecs-tasks-sg"
   vpc_id = var.vpc_id
 }
 
 locals {
-  ecs_tasks_security_group_id = data.aws_security_group.ecs_tasks.id
+  # Usar o security group existente se fornecido, caso contrário usar o data source
+  ecs_tasks_security_group_id = var.existing_security_group_id != null ? var.existing_security_group_id : data.aws_security_group.ecs_tasks[0].id
 }
 
 # Buscar o log group existente em vez de tentar criar um novo

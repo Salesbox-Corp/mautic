@@ -199,6 +199,12 @@ variable "hosted_zone_id" {
   type        = string
 }
 
+variable "existing_security_group_id" {
+  description = "ID do security group existente para tasks ECS"
+  type        = string
+  default     = null
+}
+
 locals {
   secrets_region = coalesce(var.secrets_region, var.aws_region)
 } 
