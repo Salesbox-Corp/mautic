@@ -116,8 +116,6 @@ if [ ! -z "$MAUTIC_LOCALE" ]; then
     ENVIRONMENT_VARS=$(echo "$ENVIRONMENT_VARS" | jq '. + [{"name": "MAUTIC_LOCALE", "value": "'"$MAUTIC_LOCALE"'"}]')
 fi
 
-ENVIRONMENT_VARS="$ENVIRONMENT_VARS]"
-
 # Criar nova task definition
 echo "Criando nova task definition..."
 NEW_TASK_DEFINITION=$(aws ecs register-task-definition \
