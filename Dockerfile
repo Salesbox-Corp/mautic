@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y \
     libmagickwand-dev \
     curl \
     libicu-dev \
+    default-mysql-client \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-configure imap --with-kerberos --with-imap-ssl \
     && docker-php-ext-configure intl \
