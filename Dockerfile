@@ -42,6 +42,16 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 
 # Configurar Apache
 RUN a2enmod rewrite
+# Adicionar configuração para o health.php
+RUN echo '<Directory /var/www/html>\n\
+    Options -Indexes +FollowSymLinks\n\
+    AllowOverride All\n\
+    Require all granted\n\
+</Directory>\n\
+<Files "health.php">\n\
+    Require all granted\n\
+</Files>' > /etc/apache2/conf-available/health.conf \
+    && a2enconf health
 
 # Instalar Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
