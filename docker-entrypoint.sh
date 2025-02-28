@@ -48,6 +48,12 @@ return [
 ];
 EOF
 
+# Criar banco de dados se for primeira instalação
+if [ "$IS_FIRST_INSTALL" = "true" ]; then
+  echo "Criando banco de dados..."
+  ./manage-database.sh create_client_database "$CLIENT" "$ENVIRONMENT" "$AWS_REGION"
+fi
+
 # Copiar local.php para parameters_local.php
 cp /var/www/html/app/config/local.php /var/www/html/app/config/parameters_local.php
 
@@ -88,11 +94,7 @@ echo "Permissões:"
 ls -l /var/www/html/app/config/local.php /var/www/html/app/config/parameters_local.php
 echo "==================================="
 
-# Criar banco de dados se for primeira instalação
-if [ "$IS_FIRST_INSTALL" = "true" ]; then
-  echo "Criando banco de dados..."
-  ./manage-database.sh create_client_database "$CLIENT" "$ENVIRONMENT" "$AWS_REGION"
-fi
+
 
 # Executar o comando original
 exec "$@" 
