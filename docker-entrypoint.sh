@@ -1,14 +1,6 @@
 #!/bin/bash
 set -e
 
-# Criar arquivo de healthcheck
-echo "Criando arquivo de healthcheck..."
-cat > /var/www/html/health.php << EOF
-<?php
-header('Content-Type: application/json');
-echo json_encode(['status' => 'healthy', 'timestamp' => time()]);
-EOF
-
 # Debug: Mostrar variáveis de ambiente e resolver DNS
 echo "=== Informações de Debug ==="
 echo "DB_HOST: $MAUTIC_DB_HOST"
@@ -30,6 +22,28 @@ mkdir -p /var/www/html/app/spool
 chown -R www-data:www-data /var/www/html
 find /var/www/html -type d -exec chmod 775 {} \;
 find /var/www/html -type f -exec chmod 664 {} \;
+
+# Criar arquivo de healthcheck como www-data
+echo "Criando arquivo de healthcheck..."
+su -s /bin/bash -c "cat > /var/www/html/health.php" www-data << 'EOF'
+<?php
+header('Content-Type: application/json');
+header('Cache-Control: no-cache, no-store, must-revalidate');
+header('Pragma: no-cache');
+header('Expires: 0');
+echo json_encode([
+    'status' => 'healthy',
+    'timestamp' => time(),
+    'environment' => 'production'
+]);
+EOF
+
+# Garantir permissões corretas para o health.php
+chown www-data:www-data /var/www/html/health.php
+chmod 644 /var/www/html/health.php
+
+echo "Arquivo health.php criado com permissões:"
+ls -l /var/www/html/health.php
 
 # Testar conexão com o banco como www-data
 echo "Testando conexão com o banco de dados como www-data..."
