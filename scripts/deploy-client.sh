@@ -32,7 +32,6 @@ echo "Iniciando deploy para $CLIENT/$ENVIRONMENT na região $AWS_REGION..."
 ECR_REPOSITORY="mautic-${CLIENT}-${ENVIRONMENT}"
 ECS_CLUSTER="mautic-${CLIENT}-${ENVIRONMENT}-cluster"
 ECS_SERVICE="mautic-${CLIENT}-${ENVIRONMENT}-service"
-TASK_FAMILY="mautic-${CLIENT}-${ENVIRONMENT}-task"
 
 # Obter o ID da conta AWS
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
@@ -59,30 +58,11 @@ echo "Enviando imagem para o ECR..."
 docker push "${ECR_REPOSITORY_URI}:${VERSION}"
 docker push "${ECR_REPOSITORY_URI}:latest"
 
-# Obter a task definition atual
-echo "Obtendo task definition atual..."
-TASK_DEFINITION=$(aws ecs describe-task-definition --task-definition "${TASK_FAMILY}" --region "${AWS_REGION}")
-
-# Criar nova task definition usando a atual como base, apenas atualizando a imagem
-echo "Criando nova task definition..."
-NEW_TASK_DEFINITION=$(echo "$TASK_DEFINITION" | jq --arg IMAGE "${ECR_REPOSITORY_URI}:${VERSION}" '.taskDefinition | .containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' | aws ecs register-task-definition --region "${AWS_REGION}" --cli-input-json '{
-    "family": "'${TASK_FAMILY}'",
-    "taskRoleArn": "'$(echo "$TASK_DEFINITION" | jq -r '.taskDefinition.taskRoleArn')'",
-    "executionRoleArn": "'$(echo "$TASK_DEFINITION" | jq -r '.taskDefinition.executionRoleArn')'",
-    "networkMode": "'$(echo "$TASK_DEFINITION" | jq -r '.taskDefinition.networkMode')'",
-    "containerDefinitions": '$(echo "$TASK_DEFINITION" | jq '.taskDefinition.containerDefinitions | map(if .name == "mautic" then . + {"image": "'${ECR_REPOSITORY_URI}:${VERSION}'"} else . end)')',
-    "volumes": '$(echo "$TASK_DEFINITION" | jq -r '.taskDefinition.volumes')',
-    "requiresCompatibilities": ["FARGATE"],
-    "cpu": "'$(echo "$TASK_DEFINITION" | jq -r '.taskDefinition.cpu')'",
-    "memory": "'$(echo "$TASK_DEFINITION" | jq -r '.taskDefinition.memory')'"
-}' --query 'taskDefinition.taskDefinitionArn' --output text)
-
-# Atualizar o serviço com a nova task definition
-echo "Atualizando serviço ECS com nova task definition..."
+# Forçar nova implantação do serviço
+echo "Forçando nova implantação do serviço ECS..."
 aws ecs update-service \
     --cluster "${ECS_CLUSTER}" \
     --service "${ECS_SERVICE}" \
-    --task-definition "${NEW_TASK_DEFINITION}" \
     --force-new-deployment \
     --region "${AWS_REGION}"
 
