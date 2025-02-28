@@ -287,7 +287,7 @@ resource "aws_lb_target_group" "main" {
     protocol           = "HTTP"
     matcher           = "200"
     timeout           = "5"
-    path              = "/health.php"
+    path              = "/index.php"
     unhealthy_threshold = "3"
   }
 
