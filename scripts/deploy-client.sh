@@ -77,12 +77,13 @@ ENVIRONMENT_VARS=$(cat <<EOF
   {"name": "MAUTIC_DB_USER", "value": "$MAUTIC_DB_USER"},
   {"name": "MAUTIC_DB_PASSWORD", "value": "$MAUTIC_DB_PASSWORD"},
   {"name": "MAUTIC_URL", "value": "$MAUTIC_URL"}
+]
 EOF
 )
 
 # Adicionar variáveis condicionais
 if [ ! -z "$MAUTIC_CUSTOM_LOGO_URL" ]; then
-    ENVIRONMENT_VARS=$(echo "$ENVIRONMENT_VARS" | jq '. += [{"name": "MAUTIC_CUSTOM_LOGO_URL", "value": "'"$MAUTIC_CUSTOM_LOGO_URL"'"}]')
+    ENVIRONMENT_VARS=$(echo "$ENVIRONMENT_VARS" | jq '. + [{"name": "MAUTIC_CUSTOM_LOGO_URL", "value": "'"$MAUTIC_CUSTOM_LOGO_URL"'"}]')
 fi
 
 if [ "$IS_FIRST_INSTALL" = "true" ]; then
@@ -96,7 +97,7 @@ if [ "$IS_FIRST_INSTALL" = "true" ]; then
         process_mailer_config "$MAILER_CONFIG"
     fi
 
-    ENVIRONMENT_VARS=$(echo "$ENVIRONMENT_VARS" | jq '. += [
+    ENVIRONMENT_VARS=$(echo "$ENVIRONMENT_VARS" | jq '. + [
         {"name": "MAUTIC_ADMIN_EMAIL", "value": "'"$MAUTIC_ADMIN_EMAIL"'"},
         {"name": "MAUTIC_ADMIN_PASSWORD", "value": "'"$MAUTIC_ADMIN_PASSWORD"'"},
         {"name": "MAUTIC_ADMIN_FIRSTNAME", "value": "'"$MAUTIC_ADMIN_FIRSTNAME"'"},
@@ -108,11 +109,11 @@ fi
 
 # Adicionar tema e localização se fornecidos
 if [ ! -z "$MAUTIC_THEME" ]; then
-    ENVIRONMENT_VARS=$(echo "$ENVIRONMENT_VARS" | jq '. += [{"name": "MAUTIC_THEME", "value": "'"$MAUTIC_THEME"'"}]')
+    ENVIRONMENT_VARS=$(echo "$ENVIRONMENT_VARS" | jq '. + [{"name": "MAUTIC_THEME", "value": "'"$MAUTIC_THEME"'"}]')
 fi
 
 if [ ! -z "$MAUTIC_LOCALE" ]; then
-    ENVIRONMENT_VARS=$(echo "$ENVIRONMENT_VARS" | jq '. += [{"name": "MAUTIC_LOCALE", "value": "'"$MAUTIC_LOCALE"'"}]')
+    ENVIRONMENT_VARS=$(echo "$ENVIRONMENT_VARS" | jq '. + [{"name": "MAUTIC_LOCALE", "value": "'"$MAUTIC_LOCALE"'"}]')
 fi
 
 ENVIRONMENT_VARS="$ENVIRONMENT_VARS]"
