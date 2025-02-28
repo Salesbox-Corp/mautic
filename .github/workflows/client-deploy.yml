@@ -7,8 +7,13 @@ on:
         description: 'Cliente para deploy'
         required: true
       environment:
-        description: 'Ambiente (demo/staging/prd)'
+        description: 'Ambiente para deploy'
         required: true
+        type: choice
+        options:
+          - 'demo'     # Ambiente de demonstração
+          - 'staging'  # Ambiente de homologação
+          - 'prd'      # Ambiente de produção
         default: 'demo'
       version:
         description: 'Versão para deploy'
@@ -27,6 +32,29 @@ on:
         description: 'URL do logo personalizado (opcional - será salvo para futuros deploys)'
         required: false
         type: string
+      is_first_install:
+        description: 'É primeira instalação deste ambiente?'
+        required: true
+        type: boolean
+        default: false
+      admin_email:
+        description: 'Email do administrador do Mautic (obrigatório apenas na primeira instalação)'
+        required: false
+      admin_password:
+        description: 'Senha do administrador do Mautic (obrigatório apenas na primeira instalação - mínimo 12 caracteres)'
+        required: false
+      admin_firstname:
+        description: 'Nome do administrador (obrigatório apenas na primeira instalação)'
+        required: false
+      admin_lastname:
+        description: 'Sobrenome do administrador (obrigatório apenas na primeira instalação)'
+        required: false
+      mailer_from_name:
+        description: 'Nome para envio de emails (obrigatório apenas na primeira instalação)'
+        required: false
+      mailer_from_email:
+        description: 'Email para envio (obrigatório apenas na primeira instalação)'
+        required: false
 
 jobs:
   prepare:
@@ -37,7 +65,10 @@ jobs:
       environment: ${{ steps.extract.outputs.environment }}
       version: ${{ steps.extract.outputs.version }}
       aws_region: ${{ steps.extract.outputs.aws_region }}
+      is_first_install: ${{ steps.check_install.outputs.is_first_install }}
     steps:
+      - uses: actions/checkout@v4
+      
       - id: extract
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
@@ -56,6 +87,28 @@ jobs:
               echo "version=latest" >> $GITHUB_OUTPUT
               echo "aws_region=us-east-2" >> $GITHUB_OUTPUT
               echo "custom_logo_url=" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - id: check_install
+        run: |
+          # Verificar se o ambiente já está instalado no config.json
+          IS_INSTALLED=$(jq -r ".clients.\"${{ steps.extract.outputs.client }}\".environments.\"${{ steps.extract.outputs.environment }}\".installed" clients/config.json)
+          
+          if [[ "$IS_INSTALLED" == "true" ]]; then
+            echo "is_first_install=false" >> $GITHUB_OUTPUT
+          else
+            echo "is_first_install=true" >> $GITHUB_OUTPUT
+            
+            # Se for primeira instalação, validar campos obrigatórios
+            if [[ -z "${{ github.event.inputs.admin_email }}" ]] || 
+               [[ -z "${{ github.event.inputs.admin_password }}" ]] || 
+               [[ -z "${{ github.event.inputs.admin_firstname }}" ]] || 
+               [[ -z "${{ github.event.inputs.admin_lastname }}" ]] || 
+               [[ -z "${{ github.event.inputs.mailer_from_name }}" ]] || 
+               [[ -z "${{ github.event.inputs.mailer_from_email }}" ]]; then
+              echo "Erro: Todos os campos de administrador são obrigatórios na primeira instalação"
+              exit 1
             fi
           fi
 
@@ -84,11 +137,13 @@ jobs:
           echo "AWS_REGION=${{ needs.prepare.outputs.aws_region }}" >> $GITHUB_ENV
           echo "ECR_REPOSITORY=mautic-${{ needs.prepare.outputs.client }}-${{ needs.prepare.outputs.environment }}" >> $GITHUB_ENV
           
-          # Criar diretório e arquivo de configuração se não existirem
-          mkdir -p clients
-          if [ ! -f clients/config.json ]; then
-            echo '{"clients":{}}' > clients/config.json
-          fi
+          # Configurações do Mautic
+          echo "MAUTIC_DB_HOST=${{ secrets.MAUTIC_DB_HOST }}" >> $GITHUB_ENV
+          echo "MAUTIC_DB_PORT=${{ secrets.MAUTIC_DB_PORT }}" >> $GITHUB_ENV
+          echo "MAUTIC_DB_NAME=${{ secrets.MAUTIC_DB_NAME }}" >> $GITHUB_ENV
+          echo "MAUTIC_DB_USER=${{ secrets.MAUTIC_DB_USER }}" >> $GITHUB_ENV
+          echo "MAUTIC_DB_PASSWORD=${{ secrets.MAUTIC_DB_PASSWORD }}" >> $GITHUB_ENV
+          echo "MAUTIC_URL=https://${{ needs.prepare.outputs.client }}-${{ needs.prepare.outputs.environment }}.mautic.example.com" >> $GITHUB_ENV
           
           # Se uma URL personalizada foi fornecida, salvar no config.json
           if [ ! -z "${{ github.event.inputs.custom_logo_url }}" ]; then
@@ -113,7 +168,18 @@ jobs:
               fi
             else
               # Cliente não existe, criar novo
-              jq --arg logo "$LOGO_URL" --arg client "${{ needs.prepare.outputs.client }}" '.clients[$client] = {"logo_url": $logo, "environments": {"demo": {}, "staging": {}, "prd": {}}}' clients/config.json > clients/config.json.tmp
+              jq --arg logo "$LOGO_URL" --arg client "${{ needs.prepare.outputs.client }}" \
+                 --arg env "${{ needs.prepare.outputs.environment }}" \
+                 --arg version "${{ needs.prepare.outputs.version }}" \
+                 '.clients[$client] = {
+                    "logo_url": $logo,
+                    "environments": {
+                      ($env): {
+                        "installed": false,
+                        "version": $version
+                      }
+                    }
+                  }' clients/config.json > clients/config.json.tmp
               mv clients/config.json.tmp clients/config.json
               
               # Configurar Git
@@ -136,6 +202,16 @@ jobs:
             fi
           fi
 
+          # Se for primeira instalação, configurar variáveis de admin
+          if [[ "${{ needs.prepare.outputs.is_first_install }}" == "true" ]]; then
+            echo "MAUTIC_ADMIN_EMAIL=${{ github.event.inputs.admin_email }}" >> $GITHUB_ENV
+            echo "MAUTIC_ADMIN_PASSWORD=${{ github.event.inputs.admin_password }}" >> $GITHUB_ENV
+            echo "MAUTIC_ADMIN_FIRSTNAME=${{ github.event.inputs.admin_firstname }}" >> $GITHUB_ENV
+            echo "MAUTIC_ADMIN_LASTNAME=${{ github.event.inputs.admin_lastname }}" >> $GITHUB_ENV
+            echo "MAUTIC_ADMIN_FROM_NAME=${{ github.event.inputs.mailer_from_name }}" >> $GITHUB_ENV
+            echo "MAUTIC_ADMIN_FROM_EMAIL=${{ github.event.inputs.mailer_from_email }}" >> $GITHUB_ENV
+          fi
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
@@ -152,6 +228,27 @@ jobs:
       - name: Build and Deploy
         run: |
           ./scripts/deploy-client.sh $CLIENT $ENVIRONMENT $VERSION $AWS_REGION
+
+      - name: Update Installation Status
+        if: success()
+        run: |
+          # Atualizar status de instalação no config.json
+          jq --arg client "$CLIENT" \
+             --arg env "$ENVIRONMENT" \
+             --arg version "$VERSION" \
+             '.clients[$client].environments[$env] = {
+                "installed": true,
+                "version": $version,
+                "last_update": (now | strftime("%Y-%m-%d %H:%M:%S"))
+              }' clients/config.json > clients/config.json.tmp
+          mv clients/config.json.tmp clients/config.json
+          
+          # Commit e push das alterações
+          git config --global user.name "GitHub Actions Bot"
+          git config --global user.email "actions@github.com"
+          git add clients/config.json
+          git commit -m "chore: atualiza status de instalação para $CLIENT-$ENVIRONMENT"
+          git push origin HEAD:main
 
       - name: Verify Deployment
         run: |
@@ -171,4 +268,4 @@ jobs:
           ALB_DNS=$(aws elbv2 describe-load-balancers --names "mautic-${CLIENT}-${ENVIRONMENT}-alb" --region $AWS_REGION --query 'LoadBalancers[0].DNSName' --output text)
           
           echo "Deployment verificado com sucesso!"
-          echo "Aplicação disponível em: http://$ALB_DNS" 
+          echo "Aplicação disponível em: https://$ALB_DNS" 

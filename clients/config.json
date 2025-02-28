@@ -3,14 +3,35 @@
     "exemplo-cliente": {
       "name": "Exemplo Cliente",
       "logo_url": "https://exemplo.com/logo.png",
+      "mautic_config": {
+        "admin_email": "admin@exemplo.com",
+        "mailer_from_name": "Exemplo Cliente",
+        "mailer_from_email": "noreply@exemplo.com",
+        "theme": "default",
+        "locale": "pt_BR",
+        "timezone": "America/Sao_Paulo"
+      },
       "environments": {
-        "demo": {},
+        "demo": {
+          "url": "demo.exemplo.mautic.com",
+          "installed": true,
+          "version": "6.0.0"
+        },
         "staging": {},
         "prd": {}
       }
     },
     "salesbox": {
+      "name": "Salesbox",
       "logo_url": "https://site.salesbox.com.br/img/logo-salesbox2%203.png",
+      "mautic_config": {
+        "admin_email": "admin@salesbox.com.br",
+        "mailer_from_name": "Salesbox",
+        "mailer_from_email": "noreply@salesbox.com.br",
+        "theme": "default",
+        "locale": "pt_BR",
+        "timezone": "America/Sao_Paulo"
+      },
       "environments": {
         "demo": {},
         "staging": {},

@@ -189,4 +189,49 @@ chown www-data:www-data /var/www/html/info.php
 chmod 644 /var/www/html/info.php
 
 echo "Arquivo info.php criado com permissões:"
-ls -l /var/www/html/info.php 
+ls -l /var/www/html/info.php
+
+# Aguardar o banco de dados estar disponível
+if [ ! -z "$MAUTIC_DB_HOST" ]; then
+    echo "Aguardando banco de dados..."
+    while ! mysqladmin ping -h"$MAUTIC_DB_HOST" -P"${MAUTIC_DB_PORT:-3306}" --silent; do
+        sleep 1
+    done
+fi
+
+cd /var/www/html
+
+# Verificar se o Mautic já está instalado
+if [ ! -f "docroot/app/config/local.php" ]; then
+    echo "Instalando Mautic..."
+    
+    # Instalar Mautic via CLI
+    php bin/console mautic:install "$MAUTIC_URL" \
+        --mailer_from_name="$MAUTIC_ADMIN_FROM_NAME" \
+        --mailer_from_email="$MAUTIC_ADMIN_FROM_EMAIL" \
+        --mailer_transport="$MAUTIC_MAILER_TRANSPORT" \
+        --mailer_host="$MAUTIC_MAILER_HOST" \
+        --mailer_port="$MAUTIC_MAILER_PORT" \
+        --db_driver="pdo_mysql" \
+        --db_host="$MAUTIC_DB_HOST" \
+        --db_port="$MAUTIC_DB_PORT" \
+        --db_name="$MAUTIC_DB_NAME" \
+        --db_user="$MAUTIC_DB_USER" \
+        --db_password="$MAUTIC_DB_PASSWORD" \
+        --admin_email="$MAUTIC_ADMIN_EMAIL" \
+        --admin_password="$MAUTIC_ADMIN_PASSWORD" \
+        --admin_firstname="$MAUTIC_ADMIN_FIRSTNAME" \
+        --admin_lastname="$MAUTIC_ADMIN_LASTNAME" \
+        --db_backup_tables="false"
+fi
+
+# Limpar cache
+rm -rf docroot/app/cache/*
+
+# Ajustar permissões
+chown -R www-data:www-data .
+find . -type d -exec chmod 775 {} \;
+find . -type f -exec chmod 664 {} \;
+
+# Iniciar Apache em primeiro plano
+apache2-foreground 
