@@ -27,15 +27,33 @@ find /var/www/html -type f -exec chmod 664 {} \;
 echo "Criando arquivo de healthcheck..."
 su -s /bin/bash -c "cat > /var/www/html/health.php" www-data << 'EOF'
 <?php
+// Garantir que erros PHP não afetem a saída JSON
+error_reporting(0);
+ini_set('display_errors', 0);
+
+// Definir headers
 header('Content-Type: application/json');
 header('Cache-Control: no-cache, no-store, must-revalidate');
 header('Pragma: no-cache');
 header('Expires: 0');
-echo json_encode([
+
+// Preparar resposta
+$response = array(
     'status' => 'healthy',
     'timestamp' => time(),
-    'environment' => 'production'
-]);
+    'environment' => 'production',
+    'php_version' => PHP_VERSION
+);
+
+// Enviar resposta
+echo json_encode($response);
+exit(0);
+EOF
+
+# Criar arquivo de teste para verificar se PHP está funcionando
+echo "Criando arquivo de teste PHP..."
+su -s /bin/bash -c "cat > /var/www/html/test.php" www-data << 'EOF'
+<?php phpinfo(); ?>
 EOF
 
 # Criar .htaccess para o health.php
