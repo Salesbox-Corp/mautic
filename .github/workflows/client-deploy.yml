@@ -28,10 +28,9 @@ on:
           - 'us-east-2'  # Ohio (recomendado)
           - 'us-east-1'  # Virginia
           - 'us-west-2'  # Oregon
-      custom_logo_url:
-        description: 'URL do logo personalizado (opcional - será salvo para futuros deploys)'
-        required: false
-        type: string
+      custom_url:
+        description: 'URL customizada do Mautic (ex: mautic.seudominio.com.br)'
+        required: true
       is_first_install:
         description: 'É primeira instalação deste ambiente?'
         required: true
@@ -62,6 +61,7 @@ jobs:
       version: ${{ steps.extract.outputs.version }}
       aws_region: ${{ steps.extract.outputs.aws_region }}
       is_first_install: ${{ steps.check_install.outputs.is_first_install }}
+      custom_url: ${{ steps.extract.outputs.custom_url }}
     steps:
       - uses: actions/checkout@v4
       
@@ -72,7 +72,7 @@ jobs:
             echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
             echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
             echo "aws_region=${{ github.event.inputs.aws_region }}" >> $GITHUB_OUTPUT
-            echo "custom_logo_url=${{ github.event.inputs.custom_logo_url }}" >> $GITHUB_OUTPUT
+            echo "custom_url=${{ github.event.inputs.custom_url }}" >> $GITHUB_OUTPUT
           else
             BRANCH=${{ github.ref }}
             if [[ $BRANCH == refs/heads/clients/* ]]; then
@@ -82,7 +82,6 @@ jobs:
               echo "environment=$ENV" >> $GITHUB_OUTPUT
               echo "version=latest" >> $GITHUB_OUTPUT
               echo "aws_region=us-east-2" >> $GITHUB_OUTPUT
-              echo "custom_logo_url=" >> $GITHUB_OUTPUT
             fi
           fi
 
@@ -135,7 +134,7 @@ jobs:
           echo "MAUTIC_DB_NAME=${{ secrets.MAUTIC_DB_NAME }}" >> $GITHUB_ENV
           echo "MAUTIC_DB_USER=${{ secrets.MAUTIC_DB_USER }}" >> $GITHUB_ENV
           echo "MAUTIC_DB_PASSWORD=${{ secrets.MAUTIC_DB_PASSWORD }}" >> $GITHUB_ENV
-          echo "MAUTIC_URL=https://${{ needs.prepare.outputs.client }}-${{ needs.prepare.outputs.environment }}.mautic.example.com" >> $GITHUB_ENV
+          echo "MAUTIC_SITE_URL=https://${{ needs.prepare.outputs.custom_url }}" >> $GITHUB_ENV
           
           # Se uma URL personalizada foi fornecida, salvar no config.json
           if [ ! -z "${{ github.event.inputs.custom_logo_url }}" ]; then
@@ -196,12 +195,17 @@ jobs:
 
           # Se for primeira instalação, configurar variáveis de admin
           if [[ "${{ needs.prepare.outputs.is_first_install }}" == "true" ]]; then
-            echo "MAUTIC_ADMIN_EMAIL=${{ github.event.inputs.admin_credentials }}" >> $GITHUB_ENV
-            echo "MAUTIC_ADMIN_PASSWORD=${{ github.event.inputs.admin_credentials }}" >> $GITHUB_ENV
-            echo "MAUTIC_ADMIN_FIRSTNAME=${{ github.event.inputs.admin_credentials }}" >> $GITHUB_ENV
-            echo "MAUTIC_ADMIN_LASTNAME=${{ github.event.inputs.admin_credentials }}" >> $GITHUB_ENV
-            echo "MAUTIC_ADMIN_FROM_NAME=${{ github.event.inputs.mailer_config }}" >> $GITHUB_ENV
-            echo "MAUTIC_ADMIN_FROM_EMAIL=${{ github.event.inputs.mailer_config }}" >> $GITHUB_ENV
+            # Extrair valores do campo admin_credentials
+            IFS=',' read -r EMAIL SENHA NOME SOBRENOME <<< "${{ github.event.inputs.admin_credentials }}"
+            echo "MAUTIC_ADMIN_EMAIL=$EMAIL" >> $GITHUB_ENV
+            echo "MAUTIC_ADMIN_PASSWORD=$SENHA" >> $GITHUB_ENV
+            echo "MAUTIC_ADMIN_FIRSTNAME=$NOME" >> $GITHUB_ENV
+            echo "MAUTIC_ADMIN_LASTNAME=$SOBRENOME" >> $GITHUB_ENV
+            
+            # Extrair valores do campo mailer_config
+            IFS=',' read -r NOME_EMAIL EMAIL_FROM <<< "${{ github.event.inputs.mailer_config }}"
+            echo "MAUTIC_ADMIN_FROM_NAME=$NOME_EMAIL" >> $GITHUB_ENV
+            echo "MAUTIC_ADMIN_FROM_EMAIL=$EMAIL_FROM" >> $GITHUB_ENV
           fi
 
       - name: Configure AWS credentials

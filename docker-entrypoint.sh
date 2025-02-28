@@ -7,6 +7,7 @@ echo "DB_HOST: $MAUTIC_DB_HOST"
 echo "DB_PORT: $MAUTIC_DB_PORT"
 echo "DB_NAME: $MAUTIC_DB_NAME"
 echo "DB_USER: $MAUTIC_DB_USER"
+echo "SITE_URL: $MAUTIC_SITE_URL"
 echo "Resolvendo DNS do host do banco:"
 getent hosts "$MAUTIC_DB_HOST" || echo "Não foi possível resolver o host"
 echo "==========================="
@@ -31,43 +32,20 @@ rm -f /var/www/html/app/config/parameters_local.php
 echo "Criando arquivo local.php..."
 cat > /var/www/html/app/config/local.php << EOF
 <?php
-\$parameters = array(
+return [
     'db_driver' => 'pdo_mysql',
     'db_host' => '${MAUTIC_DB_HOST}',
     'db_port' => ${MAUTIC_DB_PORT:-3306},
     'db_name' => '${MAUTIC_DB_NAME}',
     'db_user' => '${MAUTIC_DB_USER}',
     'db_password' => '${MAUTIC_DB_PASSWORD}',
-    'db_table_prefix' => null,
-    'db_backup_tables' => false,
-    'db_backup_prefix' => 'bak_',
-    'admin_email' => '${MAUTIC_ADMIN_EMAIL}',
-    'admin_password' => '${MAUTIC_ADMIN_PASSWORD}',
-    'admin_firstname' => '${MAUTIC_ADMIN_FIRSTNAME}',
-    'admin_lastname' => '${MAUTIC_ADMIN_LASTNAME}',
-    'mailer_from_name' => '${MAUTIC_MAILER_FROM_NAME}',
-    'mailer_from_email' => '${MAUTIC_MAILER_FROM_EMAIL}',
-    'mailer_transport' => '${MAUTIC_MAILER_TRANSPORT}',
-    'mailer_host' => '${MAUTIC_MAILER_HOST}',
-    'mailer_port' => '${MAUTIC_MAILER_PORT}',
-    'mailer_user' => '${MAUTIC_MAILER_USER}',
-    'mailer_password' => '${MAUTIC_MAILER_PASSWORD}',
-    'mailer_encryption' => '${MAUTIC_MAILER_ENCRYPTION}',
-    'mailer_auth_mode' => '${MAUTIC_MAILER_AUTH_MODE}',
-    'mailer_spool_type' => 'file',
-    'mailer_spool_path' => '%kernel.root_dir%/spool',
-    'secret_key' => '${MAUTIC_SECRET_KEY:-def00000fc1e34ca0f47d0c99c19768c551b451a956c9f83d308cca6b09518bb5204d51ff5fca14f}',
-    'site_url' => '${MAUTIC_URL}',
-    'image_path' => 'media/images',
-    'tmp_path' => '/tmp',
-    'theme' => '${MAUTIC_THEME:-blank}',
-    'locale' => '${MAUTIC_LOCALE:-pt_BR}',
-    'timezone' => '${MAUTIC_TIMEZONE:-America/Sao_Paulo}',
+    'mailer_from_name' => '${MAUTIC_ADMIN_FROM_NAME}',
+    'mailer_from_email' => '${MAUTIC_ADMIN_FROM_EMAIL}',
     'installed' => true,
     'is_installed' => true,
     'db_installed' => true,
-    'install_source' => 'docker'
-);
+    'site_url' => '${MAUTIC_SITE_URL}',
+];
 EOF
 
 # Copiar local.php para parameters_local.php
@@ -82,8 +60,12 @@ touch /var/www/html/app/config/.installed
 chown www-data:www-data /var/www/html/app/config/.installed
 chmod 644 /var/www/html/app/config/.installed
 
-# Limpar cache
-rm -rf /var/www/html/app/cache/*
+# Limpar cache e rodar migrations
+echo "=== Executando comandos do Mautic ==="
+cd /var/www/html
+php bin/console cache:clear --no-warmup
+php bin/console doctrine:migrations:migrate --no-interaction
+echo "==================================="
 
 # Verificar conteúdo final
 echo "=== Verificando configuração final ==="
