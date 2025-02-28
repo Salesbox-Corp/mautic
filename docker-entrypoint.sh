@@ -38,12 +38,22 @@ echo json_encode([
 ]);
 EOF
 
-# Garantir permissões corretas para o health.php
-chown www-data:www-data /var/www/html/health.php
-chmod 644 /var/www/html/health.php
+# Criar .htaccess para o health.php
+echo "Criando .htaccess para o health.php..."
+su -s /bin/bash -c "cat > /var/www/html/.htaccess" www-data << 'EOF'
+<Files "health.php">
+    Order Allow,Deny
+    Allow from all
+    Satisfy Any
+</Files>
+EOF
 
-echo "Arquivo health.php criado com permissões:"
-ls -l /var/www/html/health.php
+# Garantir permissões corretas para os arquivos
+chown www-data:www-data /var/www/html/health.php /var/www/html/.htaccess
+chmod 644 /var/www/html/health.php /var/www/html/.htaccess
+
+echo "Arquivo health.php e .htaccess criados com permissões:"
+ls -l /var/www/html/health.php /var/www/html/.htaccess
 
 # Testar conexão com o banco como www-data
 echo "Testando conexão com o banco de dados como www-data..."
