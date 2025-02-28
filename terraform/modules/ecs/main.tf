@@ -282,13 +282,15 @@ resource "aws_lb_target_group" "main" {
   target_type = "ip"
 
   health_check {
-    healthy_threshold   = "2"
-    interval           = "15"
+    enabled             = true
+    healthy_threshold   = 2
+    unhealthy_threshold = 10
+    interval            = 30
+    timeout            = 5
+    path               = "/index.php"
+    port               = "traffic-port"
     protocol           = "HTTP"
-    matcher           = "200"
-    timeout           = "5"
-    path              = "/index.php"
-    unhealthy_threshold = "3"
+    matcher            = "300-399,200-299"
   }
 
   tags = var.tags
