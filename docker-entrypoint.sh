@@ -121,6 +121,9 @@ if [ ! -z "$MAUTIC_CUSTOM_LOGO_URL" ]; then
     echo "=== Configuração da Logo Personalizada ==="
     echo "URL da Logo: $MAUTIC_CUSTOM_LOGO_URL"
     
+    # Criar diretório se não existir
+    mkdir -p /var/www/html/media/images
+    
     # Verificar se a imagem já existe e está íntegra
     if [ -f /var/www/html/media/images/custom_logo.png ]; then
         echo "Logo existente encontrada, verificando integridade..."
@@ -137,7 +140,7 @@ if [ ! -z "$MAUTIC_CUSTOM_LOGO_URL" ]; then
         echo "Baixando logo personalizada..."
         # Tratar URL com espaços
         FIXED_URL=$(echo "$MAUTIC_CUSTOM_LOGO_URL" | sed 's/ /%20/g')
-        if wget -q "$FIXED_URL" -O /var/www/html/media/images/custom_logo.png; then
+        if curl -L -s "$FIXED_URL" -o /var/www/html/media/images/custom_logo.png; then
             # Verificar se o download foi bem sucedido
             if identify /var/www/html/media/images/custom_logo.png > /dev/null 2>&1; then
                 echo "Logo baixada com sucesso"
@@ -147,22 +150,22 @@ if [ ! -z "$MAUTIC_CUSTOM_LOGO_URL" ]; then
             else
                 echo "Logo baixada está corrompida, usando logo padrão..."
                 rm -f /var/www/html/media/images/custom_logo.png
-                # Usar a logo padrão do Mautic
-                cp /var/www/html/app/assets/images/mautic_logo_db200.png /var/www/html/media/images/custom_logo.png || echo "Aviso: Logo padrão não encontrada"
             fi
         else
-            echo "Erro ao baixar logo personalizada, usando logo padrão..."
-            # Usar a logo padrão do Mautic
-            cp /var/www/html/app/assets/images/mautic_logo_db200.png /var/www/html/media/images/custom_logo.png || echo "Aviso: Logo padrão não encontrada"
+            echo "Erro ao baixar logo personalizada, pulando configuração da logo..."
         fi
     fi
     
     # Verificar permissões
-    chown www-data:www-data /var/www/html/media/images/custom_logo.png
-    chmod 664 /var/www/html/media/images/custom_logo.png
-    
-    echo "Status final da logo:"
-    ls -l /var/www/html/media/images/custom_logo.png
+    if [ -f /var/www/html/media/images/custom_logo.png ]; then
+        chown www-data:www-data /var/www/html/media/images/custom_logo.png
+        chmod 664 /var/www/html/media/images/custom_logo.png
+        
+        echo "Status final da logo:"
+        ls -l /var/www/html/media/images/custom_logo.png
+    else
+        echo "Aviso: Nenhuma logo foi configurada"
+    fi
     echo "=== Fim da Configuração da Logo ==="
 fi
 

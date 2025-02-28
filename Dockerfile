@@ -1,5 +1,15 @@
 FROM mautic/mautic:5.2.3-apache
 
+# Instalar ferramentas necessárias
+RUN apt-get update && apt-get install -y \
+    default-mysql-client \
+    imagemagick \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Criar diretório para logo padrão
+RUN mkdir -p /var/www/html/media/images
+
 # Copiar arquivos de configuração
 COPY local.php /var/www/html/app/config/
 COPY . .
