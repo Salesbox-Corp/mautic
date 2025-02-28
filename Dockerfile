@@ -16,10 +16,18 @@ RUN mkdir -p /var/www/html/media/images \
     && mkdir -p /var/www/html/app/assets/images/themes/blank \
     && mkdir -p /var/www/html/app/config
 
+# Criar arquivo .installed e ajustar permissões de cache
+RUN touch /var/www/html/app/config/.installed \
+    && mkdir -p /var/www/html/app/cache \
+    && chmod -R 777 /var/www/html/app/cache \
+    && chown -R www-data:www-data /var/www/html/app/cache
+
 # Copiar arquivos de configuração primeiro
 COPY local.php /var/www/html/app/config/
 RUN chown www-data:www-data /var/www/html/app/config/local.php \
-    && chmod 644 /var/www/html/app/config/local.php
+    && chmod 644 /var/www/html/app/config/local.php \
+    && chown www-data:www-data /var/www/html/app/config/.installed \
+    && chmod 644 /var/www/html/app/config/.installed
 
 # Copiar logos e scripts
 COPY assets/default_logo.png /var/www/html/app/assets/images/mautic_logo.png

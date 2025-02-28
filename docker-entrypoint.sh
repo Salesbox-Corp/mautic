@@ -246,5 +246,21 @@ chown -R www-data:www-data .
 find . -type d -exec chmod 775 {} \;
 find . -type f -exec chmod 664 {} \;
 
-# Iniciar Apache em primeiro plano
-apache2-foreground 
+# Garantir que o diretório de cache existe e tem as permissões corretas
+mkdir -p /var/www/html/app/cache
+chmod -R 777 /var/www/html/app/cache
+
+# Criar arquivo .installed se não existir
+touch /var/www/html/app/config/.installed
+chown www-data:www-data /var/www/html/app/config/.installed
+chmod 644 /var/www/html/app/config/.installed
+
+# Garantir que o local.php tem as permissões corretas
+chown www-data:www-data /var/www/html/app/config/local.php
+chmod 644 /var/www/html/app/config/local.php
+
+# Limpar cache do Mautic
+rm -rf /var/www/html/app/cache/*
+
+# Executar o comando original
+exec "$@" 
