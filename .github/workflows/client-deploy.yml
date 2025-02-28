@@ -37,24 +37,20 @@ on:
         required: true
         type: boolean
         default: false
-      admin_email:
-        description: 'Email do administrador do Mautic (obrigatório apenas na primeira instalação)'
+      admin_credentials:
+        description: 'Credenciais do admin (apenas primeira instalação) - formato: email,senha,nome,sobrenome'
         required: false
-      admin_password:
-        description: 'Senha do administrador do Mautic (obrigatório apenas na primeira instalação - mínimo 12 caracteres)'
+      mailer_config:
+        description: 'Configuração de email (apenas primeira instalação) - formato: nome,email'
         required: false
-      admin_firstname:
-        description: 'Nome do administrador (obrigatório apenas na primeira instalação)'
+      theme:
+        description: 'Tema do Mautic (opcional)'
         required: false
-      admin_lastname:
-        description: 'Sobrenome do administrador (obrigatório apenas na primeira instalação)'
+        default: 'default'
+      locale:
+        description: 'Localização (opcional)'
         required: false
-      mailer_from_name:
-        description: 'Nome para envio de emails (obrigatório apenas na primeira instalação)'
-        required: false
-      mailer_from_email:
-        description: 'Email para envio (obrigatório apenas na primeira instalação)'
-        required: false
+        default: 'pt_BR'
 
 jobs:
   prepare:
@@ -101,12 +97,8 @@ jobs:
             echo "is_first_install=true" >> $GITHUB_OUTPUT
             
             # Se for primeira instalação, validar campos obrigatórios
-            if [[ -z "${{ github.event.inputs.admin_email }}" ]] || 
-               [[ -z "${{ github.event.inputs.admin_password }}" ]] || 
-               [[ -z "${{ github.event.inputs.admin_firstname }}" ]] || 
-               [[ -z "${{ github.event.inputs.admin_lastname }}" ]] || 
-               [[ -z "${{ github.event.inputs.mailer_from_name }}" ]] || 
-               [[ -z "${{ github.event.inputs.mailer_from_email }}" ]]; then
+            if [[ -z "${{ github.event.inputs.admin_credentials }}" ]] || 
+               [[ -z "${{ github.event.inputs.mailer_config }}" ]]; then
               echo "Erro: Todos os campos de administrador são obrigatórios na primeira instalação"
               exit 1
             fi
@@ -204,12 +196,12 @@ jobs:
 
           # Se for primeira instalação, configurar variáveis de admin
           if [[ "${{ needs.prepare.outputs.is_first_install }}" == "true" ]]; then
-            echo "MAUTIC_ADMIN_EMAIL=${{ github.event.inputs.admin_email }}" >> $GITHUB_ENV
-            echo "MAUTIC_ADMIN_PASSWORD=${{ github.event.inputs.admin_password }}" >> $GITHUB_ENV
-            echo "MAUTIC_ADMIN_FIRSTNAME=${{ github.event.inputs.admin_firstname }}" >> $GITHUB_ENV
-            echo "MAUTIC_ADMIN_LASTNAME=${{ github.event.inputs.admin_lastname }}" >> $GITHUB_ENV
-            echo "MAUTIC_ADMIN_FROM_NAME=${{ github.event.inputs.mailer_from_name }}" >> $GITHUB_ENV
-            echo "MAUTIC_ADMIN_FROM_EMAIL=${{ github.event.inputs.mailer_from_email }}" >> $GITHUB_ENV
+            echo "MAUTIC_ADMIN_EMAIL=${{ github.event.inputs.admin_credentials }}" >> $GITHUB_ENV
+            echo "MAUTIC_ADMIN_PASSWORD=${{ github.event.inputs.admin_credentials }}" >> $GITHUB_ENV
+            echo "MAUTIC_ADMIN_FIRSTNAME=${{ github.event.inputs.admin_credentials }}" >> $GITHUB_ENV
+            echo "MAUTIC_ADMIN_LASTNAME=${{ github.event.inputs.admin_credentials }}" >> $GITHUB_ENV
+            echo "MAUTIC_ADMIN_FROM_NAME=${{ github.event.inputs.mailer_config }}" >> $GITHUB_ENV
+            echo "MAUTIC_ADMIN_FROM_EMAIL=${{ github.event.inputs.mailer_config }}" >> $GITHUB_ENV
           fi
 
       - name: Configure AWS credentials

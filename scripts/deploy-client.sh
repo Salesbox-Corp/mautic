@@ -1,6 +1,21 @@
 #!/bin/bash
 set -e
 
+# Funções auxiliares
+process_admin_credentials() {
+    IFS=',' read -r email password firstname lastname <<< "$1"
+    export MAUTIC_ADMIN_EMAIL="$email"
+    export MAUTIC_ADMIN_PASSWORD="$password"
+    export MAUTIC_ADMIN_FIRSTNAME="$firstname"
+    export MAUTIC_ADMIN_LASTNAME="$lastname"
+}
+
+process_mailer_config() {
+    IFS=',' read -r name email <<< "$1"
+    export MAUTIC_ADMIN_FROM_NAME="$name"
+    export MAUTIC_ADMIN_FROM_EMAIL="$email"
+}
+
 CLIENT=$1
 ENVIRONMENT=$2
 VERSION=${3:-latest}
@@ -71,6 +86,16 @@ if [ ! -z "$MAUTIC_CUSTOM_LOGO_URL" ]; then
 fi
 
 if [ "$IS_FIRST_INSTALL" = "true" ]; then
+    # Processar credenciais do admin se fornecidas
+    if [ ! -z "$ADMIN_CREDENTIALS" ]; then
+        process_admin_credentials "$ADMIN_CREDENTIALS"
+    fi
+    
+    # Processar configuração de email se fornecida
+    if [ ! -z "$MAILER_CONFIG" ]; then
+        process_mailer_config "$MAILER_CONFIG"
+    fi
+
     ENVIRONMENT_VARS=$(echo "$ENVIRONMENT_VARS" | jq '. += [
         {"name": "MAUTIC_ADMIN_EMAIL", "value": "'"$MAUTIC_ADMIN_EMAIL"'"},
         {"name": "MAUTIC_ADMIN_PASSWORD", "value": "'"$MAUTIC_ADMIN_PASSWORD"'"},
@@ -79,6 +104,15 @@ if [ "$IS_FIRST_INSTALL" = "true" ]; then
         {"name": "MAUTIC_ADMIN_FROM_NAME", "value": "'"$MAUTIC_ADMIN_FROM_NAME"'"},
         {"name": "MAUTIC_ADMIN_FROM_EMAIL", "value": "'"$MAUTIC_ADMIN_FROM_EMAIL"'"}
     ]')
+fi
+
+# Adicionar tema e localização se fornecidos
+if [ ! -z "$MAUTIC_THEME" ]; then
+    ENVIRONMENT_VARS=$(echo "$ENVIRONMENT_VARS" | jq '. += [{"name": "MAUTIC_THEME", "value": "'"$MAUTIC_THEME"'"}]')
+fi
+
+if [ ! -z "$MAUTIC_LOCALE" ]; then
+    ENVIRONMENT_VARS=$(echo "$ENVIRONMENT_VARS" | jq '. += [{"name": "MAUTIC_LOCALE", "value": "'"$MAUTIC_LOCALE"'"}]')
 fi
 
 ENVIRONMENT_VARS="$ENVIRONMENT_VARS]"
