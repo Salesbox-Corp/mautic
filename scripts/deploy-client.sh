@@ -128,7 +128,7 @@ NEW_TASK_DEFINITION=$(aws ecs register-task-definition \
     --requires-compatibilities "FARGATE" \
     --container-definitions "[
         {
-            \"name\": \"${ECR_REPOSITORY}\",
+            \"name\": \"mautic\",
             \"image\": \"${ECR_REPOSITORY_URI}:${VERSION}\",
             \"essential\": true,
             \"environment\": ${ENVIRONMENT_VARS},
