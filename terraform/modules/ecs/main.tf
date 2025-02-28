@@ -282,13 +282,13 @@ resource "aws_lb_target_group" "main" {
   target_type = "ip"
 
   health_check {
-    healthy_threshold   = "3"
-    interval           = "30"
+    healthy_threshold   = "2"
+    interval           = "15"
     protocol           = "HTTP"
     matcher           = "200"
-    timeout           = "3"
-    path              = "/index.php"
-    unhealthy_threshold = "2"
+    timeout           = "5"
+    path              = "/health.php"
+    unhealthy_threshold = "3"
   }
 
   tags = var.tags

@@ -1,6 +1,14 @@
 #!/bin/bash
 set -e
 
+# Criar arquivo de healthcheck
+echo "Criando arquivo de healthcheck..."
+cat > /var/www/html/health.php << EOF
+<?php
+header('Content-Type: application/json');
+echo json_encode(['status' => 'healthy', 'timestamp' => time()]);
+EOF
+
 # Debug: Mostrar variáveis de ambiente e resolver DNS
 echo "=== Informações de Debug ==="
 echo "DB_HOST: $MAUTIC_DB_HOST"
