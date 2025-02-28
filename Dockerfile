@@ -13,10 +13,15 @@ WORKDIR /var/www/html
 # Criar diretórios necessários
 RUN mkdir -p /var/www/html/media/images \
     && mkdir -p /var/www/html/app/assets/images \
-    && mkdir -p /var/www/html/app/assets/images/themes/blank
+    && mkdir -p /var/www/html/app/assets/images/themes/blank \
+    && mkdir -p /var/www/html/app/config
 
-# Copiar apenas os arquivos necessários
+# Copiar arquivos de configuração primeiro
 COPY local.php /var/www/html/app/config/
+RUN chown www-data:www-data /var/www/html/app/config/local.php \
+    && chmod 644 /var/www/html/app/config/local.php
+
+# Copiar logos e scripts
 COPY assets/default_logo.png /var/www/html/app/assets/images/mautic_logo.png
 COPY assets/default_logo.png /var/www/html/media/images/mautic_logo_db.png
 COPY assets/default_logo.png /var/www/html/app/assets/images/themes/blank/mautic_logo.png
@@ -31,8 +36,18 @@ RUN chown -R www-data:www-data /var/www/html \
     && chmod 644 /var/www/html/app/assets/images/themes/blank/mautic_logo.png \
     && chmod +x /usr/local/bin/docker-entrypoint.sh
 
+# Verificar conteúdo do local.php após a cópia
+RUN echo "Verificando local.php após a cópia:" && \
+    cat /var/www/html/app/config/local.php | grep -v password && \
+    echo "Permissões do local.php:" && \
+    ls -l /var/www/html/app/config/local.php
+
+# Criar script para logar o local.php na inicialização
+RUN echo '#!/bin/bash\necho "=== Conteúdo do local.php na inicialização ==="\ncat /var/www/html/app/config/local.php | grep -v password\necho "=== Fim do local.php ==="\nexec "$@"' > /usr/local/bin/docker-entrypoint-wrapper.sh \
+    && chmod +x /usr/local/bin/docker-entrypoint-wrapper.sh
+
 # Definir script de inicialização
-ENTRYPOINT ["docker-entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint-wrapper.sh", "/usr/local/bin/docker-entrypoint.sh"]
 
 # Comando para iniciar o Apache
 CMD ["apache2-foreground"] 
