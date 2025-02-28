@@ -22,16 +22,6 @@ RUN touch /var/www/html/app/config/.installed \
     && chmod -R 777 /var/www/html/app/cache \
     && chown -R www-data:www-data /var/www/html/app/cache
 
-# Copiar arquivos de configuração
-COPY local.php /var/www/html/app/config/
-COPY local.php /var/www/html/app/config/parameters_local.php
-RUN chown www-data:www-data /var/www/html/app/config/local.php \
-    && chmod 644 /var/www/html/app/config/local.php \
-    && chown www-data:www-data /var/www/html/app/config/parameters_local.php \
-    && chmod 644 /var/www/html/app/config/parameters_local.php \
-    && chown www-data:www-data /var/www/html/app/config/.installed \
-    && chmod 644 /var/www/html/app/config/.installed
-
 # Copiar logos e scripts
 COPY assets/default_logo.png /var/www/html/app/assets/images/mautic_logo.png
 COPY assets/default_logo.png /var/www/html/media/images/mautic_logo_db.png
@@ -47,18 +37,8 @@ RUN chown -R www-data:www-data /var/www/html \
     && chmod 644 /var/www/html/app/assets/images/themes/blank/mautic_logo.png \
     && chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Verificar conteúdo do local.php após a cópia
-RUN echo "Verificando local.php após a cópia:" && \
-    cat /var/www/html/app/config/local.php | grep -v password && \
-    echo "Permissões do local.php:" && \
-    ls -l /var/www/html/app/config/local.php
-
-# Criar script para logar o local.php na inicialização
-RUN echo '#!/bin/bash\necho "=== Conteúdo do local.php na inicialização ==="\ncat /var/www/html/app/config/local.php | grep -v password\necho "=== Fim do local.php ==="\nexec "$@"' > /usr/local/bin/docker-entrypoint-wrapper.sh \
-    && chmod +x /usr/local/bin/docker-entrypoint-wrapper.sh
-
 # Definir script de inicialização
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint-wrapper.sh", "/usr/local/bin/docker-entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 # Comando para iniciar o Apache
 CMD ["apache2-foreground"] 
