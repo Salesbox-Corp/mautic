@@ -63,8 +63,21 @@ chmod 644 /var/www/html/app/config/.installed
 # Limpar cache e rodar migrations
 echo "=== Executando comandos do Mautic ==="
 cd /var/www/html
-php bin/console cache:clear --no-warmup
+
+# Limpar cache de forma mais agressiva
+rm -rf /var/www/html/app/cache/*
+rm -rf /var/www/html/app/logs/*
+php bin/console cache:clear --no-warmup --no-interaction
 php bin/console doctrine:migrations:migrate --no-interaction
+php bin/console doctrine:schema:update --force --no-interaction
+php bin/console mautic:install:data --force --no-interaction
+
+# Recriar cache
+php bin/console cache:warmup --no-interaction
+
+# Verificar status do banco
+php bin/console doctrine:schema:validate
+
 echo "==================================="
 
 # Verificar conteúdo final
