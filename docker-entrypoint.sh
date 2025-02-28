@@ -135,19 +135,23 @@ if [ ! -z "$MAUTIC_CUSTOM_LOGO_URL" ]; then
     # Baixar nova logo se necessário
     if [ ! -f /var/www/html/media/images/custom_logo.png ]; then
         echo "Baixando logo personalizada..."
-        su -s /bin/bash -c "curl -s -L '$MAUTIC_CUSTOM_LOGO_URL' -o /var/www/html/media/images/custom_logo.png" www-data
-        
-        # Verificar se o download foi bem sucedido
-        if [ $? -eq 0 ] && identify /var/www/html/media/images/custom_logo.png > /dev/null 2>&1; then
-            echo "Logo baixada com sucesso"
-            # Atualizar configuração do Mautic para usar o logo personalizado
-            su -s /bin/bash -c "sed -i \"/\\\$parameters = \[/a\    'logo_image' => 'images/custom_logo.png',\" /var/www/html/app/config/local.php" www-data
-            echo "Configuração da logo atualizada no local.php"
+        # Decodificar a URL antes de baixar
+        DECODED_URL=$(echo "$MAUTIC_CUSTOM_LOGO_URL" | sed 's/%20/ /g' | sed 's/%3A/:/g' | sed 's/%2F/\//g')
+        if curl -L "$DECODED_URL" -o /var/www/html/media/images/custom_logo.png; then
+            # Verificar se o download foi bem sucedido
+            if identify /var/www/html/media/images/custom_logo.png > /dev/null 2>&1; then
+                echo "Logo baixada com sucesso"
+                # Atualizar configuração do Mautic para usar o logo personalizado
+                su -s /bin/bash -c "sed -i \"/\\\$parameters = \[/a\    'logo_image' => 'images/custom_logo.png',\" /var/www/html/app/config/local.php" www-data
+                echo "Configuração da logo atualizada no local.php"
+            else
+                echo "Logo baixada está corrompida, usando fallback..."
+                rm -f /var/www/html/media/images/custom_logo.png
+                cp /var/www/html/assets/default_logo.png /var/www/html/media/images/custom_logo.png
+            fi
         else
             echo "Erro ao baixar logo personalizada, usando fallback..."
-            # Usar logo padrão como fallback
-            cp /var/www/html/media/images/mautic_logo_db200.png /var/www/html/media/images/custom_logo.png
-            echo "Logo padrão configurada como fallback"
+            cp /var/www/html/assets/default_logo.png /var/www/html/media/images/custom_logo.png
         fi
     fi
     
