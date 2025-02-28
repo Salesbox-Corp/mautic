@@ -21,4 +21,12 @@ $parameters = array(
     'mailer_auth_mode' => getenv('MAUTIC_MAILER_AUTH_MODE'),
     'mailer_spool_type' => getenv('MAUTIC_MAILER_SPOOL_TYPE') ?: 'file',
     'mailer_spool_path' => getenv('MAUTIC_MAILER_SPOOL_PATH') ?: '%kernel.root_dir%/spool',
+    'secret_key' => getenv('MAUTIC_SECRET_KEY') ?: 'def00000fc1e34ca0f47d0c99c19768c551b451a956c9f83d308cca6b09518bb5204d51ff5fca14f',
+    'site_url' => getenv('MAUTIC_URL'),
+    'image_path' => 'media/images',
+    'tmp_path' => '/tmp',
+    'theme' => 'blank',
+    'db_driver' => 'pdo_mysql',
+    'installed' => true,
+    'is_installed' => true
 ); 
