@@ -135,9 +135,9 @@ if [ ! -z "$MAUTIC_CUSTOM_LOGO_URL" ]; then
     # Baixar nova logo se necessário
     if [ ! -f /var/www/html/media/images/custom_logo.png ]; then
         echo "Baixando logo personalizada..."
-        # Decodificar a URL antes de baixar
-        DECODED_URL=$(echo "$MAUTIC_CUSTOM_LOGO_URL" | sed 's/%20/ /g' | sed 's/%3A/:/g' | sed 's/%2F/\//g')
-        if curl -L "$DECODED_URL" -o /var/www/html/media/images/custom_logo.png; then
+        # Tratar URL com espaços
+        FIXED_URL=$(echo "$MAUTIC_CUSTOM_LOGO_URL" | sed 's/ /%20/g')
+        if wget -q "$FIXED_URL" -O /var/www/html/media/images/custom_logo.png; then
             # Verificar se o download foi bem sucedido
             if identify /var/www/html/media/images/custom_logo.png > /dev/null 2>&1; then
                 echo "Logo baixada com sucesso"
@@ -145,13 +145,15 @@ if [ ! -z "$MAUTIC_CUSTOM_LOGO_URL" ]; then
                 su -s /bin/bash -c "sed -i \"/\\\$parameters = \[/a\    'logo_image' => 'images/custom_logo.png',\" /var/www/html/app/config/local.php" www-data
                 echo "Configuração da logo atualizada no local.php"
             else
-                echo "Logo baixada está corrompida, usando fallback..."
+                echo "Logo baixada está corrompida, usando logo padrão..."
                 rm -f /var/www/html/media/images/custom_logo.png
-                cp /var/www/html/assets/default_logo.png /var/www/html/media/images/custom_logo.png
+                # Usar a logo padrão do Mautic
+                cp /var/www/html/app/assets/images/mautic_logo_db200.png /var/www/html/media/images/custom_logo.png || echo "Aviso: Logo padrão não encontrada"
             fi
         else
-            echo "Erro ao baixar logo personalizada, usando fallback..."
-            cp /var/www/html/assets/default_logo.png /var/www/html/media/images/custom_logo.png
+            echo "Erro ao baixar logo personalizada, usando logo padrão..."
+            # Usar a logo padrão do Mautic
+            cp /var/www/html/app/assets/images/mautic_logo_db200.png /var/www/html/media/images/custom_logo.png || echo "Aviso: Logo padrão não encontrada"
         fi
     fi
     
