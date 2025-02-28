@@ -35,7 +35,11 @@
       "environments": {
         "demo": {},
         "staging": {},
-        "prd": {}
+        "prd": {
+          "installed": true,
+          "version": "latest",
+          "last_update": "2025-02-28 19:29:55"
+        }
       }
     }
   }
