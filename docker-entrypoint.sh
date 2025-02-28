@@ -23,55 +23,26 @@ chown -R www-data:www-data /var/www/html
 find /var/www/html -type d -exec chmod 775 {} \;
 find /var/www/html -type f -exec chmod 664 {} \;
 
-# Criar arquivo de healthcheck como www-data
+# Criar arquivo de healthcheck
 echo "Criando arquivo de healthcheck..."
-su -s /bin/bash -c "cat > /var/www/html/health.php" www-data << 'EOF'
+cat > /var/www/html/health.php << 'EOF'
 <?php
-// Garantir que erros PHP não afetem a saída JSON
-error_reporting(0);
-ini_set('display_errors', 0);
-
-// Definir headers
 header('Content-Type: application/json');
-header('Cache-Control: no-cache, no-store, must-revalidate');
-header('Pragma: no-cache');
-header('Expires: 0');
-
-// Preparar resposta
-$response = array(
-    'status' => 'healthy',
-    'timestamp' => time(),
-    'environment' => 'production',
-    'php_version' => PHP_VERSION
-);
-
-// Enviar resposta
-echo json_encode($response);
-exit(0);
+echo json_encode(['status' => 'healthy', 'timestamp' => time()]);
 EOF
+
+# Garantir permissões corretas
+chown www-data:www-data /var/www/html/health.php
+chmod 644 /var/www/html/health.php
+
+echo "Arquivo health.php criado com permissões:"
+ls -l /var/www/html/health.php
 
 # Criar arquivo de teste para verificar se PHP está funcionando
 echo "Criando arquivo de teste PHP..."
 su -s /bin/bash -c "cat > /var/www/html/test.php" www-data << 'EOF'
 <?php phpinfo(); ?>
 EOF
-
-# Criar .htaccess para o health.php
-echo "Criando .htaccess para o health.php..."
-su -s /bin/bash -c "cat > /var/www/html/.htaccess" www-data << 'EOF'
-<Files "health.php">
-    Order Allow,Deny
-    Allow from all
-    Satisfy Any
-</Files>
-EOF
-
-# Garantir permissões corretas para os arquivos
-chown www-data:www-data /var/www/html/health.php /var/www/html/.htaccess
-chmod 644 /var/www/html/health.php /var/www/html/.htaccess
-
-echo "Arquivo health.php e .htaccess criados com permissões:"
-ls -l /var/www/html/health.php /var/www/html/.htaccess
 
 # Testar conexão com o banco como www-data
 echo "Testando conexão com o banco de dados como www-data..."
@@ -204,4 +175,18 @@ apt-get update && apt-get install -y default-mysql-client
 
 echo "Iniciando Apache..."
 # Iniciar Apache em foreground
-apache2-foreground 
+apache2-foreground
+
+# Criar arquivo de teste PHP
+echo "Criando arquivo info.php para diagnóstico..."
+cat > /var/www/html/info.php << 'EOF'
+<?php
+echo "PHP está funcionando!<br>";
+phpinfo();
+EOF
+
+chown www-data:www-data /var/www/html/info.php
+chmod 644 /var/www/html/info.php
+
+echo "Arquivo info.php criado com permissões:"
+ls -l /var/www/html/info.php 

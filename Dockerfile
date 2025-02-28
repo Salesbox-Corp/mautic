@@ -42,21 +42,19 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 
 # Configurar Apache
 RUN a2enmod rewrite
-RUN docker-php-ext-install opcache
-RUN a2enmod php
 RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
-RUN echo '<Directory /var/www/html/>\n\
-    Options Indexes FollowSymLinks\n\
-    AllowOverride All\n\
-    Require all granted\n\
-</Directory>' > /etc/apache2/conf-available/docker-php.conf \
-    && a2enconf docker-php
 
-# Configurar PHP handler
-RUN echo '<FilesMatch ".+\.php$">\n\
-    SetHandler application/x-httpd-php\n\
-</FilesMatch>' > /etc/apache2/conf-available/php-handler.conf \
-    && a2enconf php-handler
+# Configurar PHP com Apache
+RUN docker-php-ext-enable opcache
+RUN echo '<VirtualHost *:80>\n\
+    DocumentRoot /var/www/html\n\
+    DirectoryIndex index.php\n\
+    <Directory /var/www/html>\n\
+        Options FollowSymLinks\n\
+        AllowOverride All\n\
+        Require all granted\n\
+    </Directory>\n\
+</VirtualHost>' > /etc/apache2/sites-available/000-default.conf
 
 # Instalar Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
