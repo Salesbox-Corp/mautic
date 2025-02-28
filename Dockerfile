@@ -22,10 +22,13 @@ RUN touch /var/www/html/app/config/.installed \
     && chmod -R 777 /var/www/html/app/cache \
     && chown -R www-data:www-data /var/www/html/app/cache
 
-# Copiar arquivos de configuração primeiro
+# Copiar arquivos de configuração
 COPY local.php /var/www/html/app/config/
+COPY local.php /var/www/html/app/config/parameters_local.php
 RUN chown www-data:www-data /var/www/html/app/config/local.php \
     && chmod 644 /var/www/html/app/config/local.php \
+    && chown www-data:www-data /var/www/html/app/config/parameters_local.php \
+    && chmod 644 /var/www/html/app/config/parameters_local.php \
     && chown www-data:www-data /var/www/html/app/config/.installed \
     && chmod 644 /var/www/html/app/config/.installed
 
