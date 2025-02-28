@@ -62,95 +62,20 @@ docker push "${ECR_REPOSITORY_URI}:latest"
 # Obter a task definition atual
 echo "Obtendo task definition atual..."
 TASK_DEFINITION=$(aws ecs describe-task-definition --task-definition "${TASK_FAMILY}" --region "${AWS_REGION}")
-TASK_ROLE_ARN=$(echo "$TASK_DEFINITION" | jq -r '.taskDefinition.taskRoleArn')
-EXECUTION_ROLE_ARN=$(echo "$TASK_DEFINITION" | jq -r '.taskDefinition.executionRoleArn')
-NETWORK_MODE=$(echo "$TASK_DEFINITION" | jq -r '.taskDefinition.networkMode')
-CPU=$(echo "$TASK_DEFINITION" | jq -r '.taskDefinition.cpu')
-MEMORY=$(echo "$TASK_DEFINITION" | jq -r '.taskDefinition.memory')
 
-# Preparar as variáveis de ambiente
-ENVIRONMENT_VARS=$(cat <<EOF
-[
-  {"name": "MAUTIC_DB_HOST", "value": "$MAUTIC_DB_HOST"},
-  {"name": "MAUTIC_DB_PORT", "value": "$MAUTIC_DB_PORT"},
-  {"name": "MAUTIC_DB_NAME", "value": "$MAUTIC_DB_NAME"},
-  {"name": "MAUTIC_DB_USER", "value": "$MAUTIC_DB_USER"},
-  {"name": "MAUTIC_DB_PASSWORD", "value": "$MAUTIC_DB_PASSWORD"},
-  {"name": "MAUTIC_URL", "value": "$MAUTIC_URL"}
-]
-EOF
-)
-
-# Adicionar variáveis condicionais
-if [ ! -z "$MAUTIC_CUSTOM_LOGO_URL" ]; then
-    ENVIRONMENT_VARS=$(echo "$ENVIRONMENT_VARS" | jq '. + [{"name": "MAUTIC_CUSTOM_LOGO_URL", "value": "'"$MAUTIC_CUSTOM_LOGO_URL"'"}]')
-fi
-
-if [ "$IS_FIRST_INSTALL" = "true" ]; then
-    # Processar credenciais do admin se fornecidas
-    if [ ! -z "$ADMIN_CREDENTIALS" ]; then
-        process_admin_credentials "$ADMIN_CREDENTIALS"
-    fi
-    
-    # Processar configuração de email se fornecida
-    if [ ! -z "$MAILER_CONFIG" ]; then
-        process_mailer_config "$MAILER_CONFIG"
-    fi
-
-    ENVIRONMENT_VARS=$(echo "$ENVIRONMENT_VARS" | jq '. + [
-        {"name": "MAUTIC_ADMIN_EMAIL", "value": "'"$MAUTIC_ADMIN_EMAIL"'"},
-        {"name": "MAUTIC_ADMIN_PASSWORD", "value": "'"$MAUTIC_ADMIN_PASSWORD"'"},
-        {"name": "MAUTIC_ADMIN_FIRSTNAME", "value": "'"$MAUTIC_ADMIN_FIRSTNAME"'"},
-        {"name": "MAUTIC_ADMIN_LASTNAME", "value": "'"$MAUTIC_ADMIN_LASTNAME"'"},
-        {"name": "MAUTIC_ADMIN_FROM_NAME", "value": "'"$MAUTIC_ADMIN_FROM_NAME"'"},
-        {"name": "MAUTIC_ADMIN_FROM_EMAIL", "value": "'"$MAUTIC_ADMIN_FROM_EMAIL"'"}
-    ]')
-fi
-
-# Adicionar tema e localização se fornecidos
-if [ ! -z "$MAUTIC_THEME" ]; then
-    ENVIRONMENT_VARS=$(echo "$ENVIRONMENT_VARS" | jq '. + [{"name": "MAUTIC_THEME", "value": "'"$MAUTIC_THEME"'"}]')
-fi
-
-if [ ! -z "$MAUTIC_LOCALE" ]; then
-    ENVIRONMENT_VARS=$(echo "$ENVIRONMENT_VARS" | jq '. + [{"name": "MAUTIC_LOCALE", "value": "'"$MAUTIC_LOCALE"'"}]')
-fi
-
-# Criar nova task definition
+# Criar nova task definition usando a atual como base, apenas atualizando a imagem
 echo "Criando nova task definition..."
-NEW_TASK_DEFINITION=$(aws ecs register-task-definition \
-    --family "${TASK_FAMILY}" \
-    --task-role-arn "${TASK_ROLE_ARN}" \
-    --execution-role-arn "${EXECUTION_ROLE_ARN}" \
-    --network-mode "${NETWORK_MODE}" \
-    --cpu "${CPU}" \
-    --memory "${MEMORY}" \
-    --requires-compatibilities "FARGATE" \
-    --container-definitions "[
-        {
-            \"name\": \"mautic\",
-            \"image\": \"${ECR_REPOSITORY_URI}:${VERSION}\",
-            \"essential\": true,
-            \"environment\": ${ENVIRONMENT_VARS},
-            \"portMappings\": [
-                {
-                    \"containerPort\": 80,
-                    \"protocol\": \"tcp\"
-                }
-            ],
-            \"logConfiguration\": {
-                \"logDriver\": \"awslogs\",
-                \"options\": {
-                    \"awslogs-group\": \"/ecs/${TASK_FAMILY}\",
-                    \"awslogs-region\": \"${AWS_REGION}\",
-                    \"awslogs-stream-prefix\": \"ecs\"
-                }
-            }
-        }
-    ]" \
-    --region "${AWS_REGION}" \
-    --query 'taskDefinition.taskDefinitionArn' \
-    --output text)
+NEW_TASK_DEFINITION=$(echo "$TASK_DEFINITION" | jq --arg IMAGE "${ECR_REPOSITORY_URI}:${VERSION}" '.taskDefinition | .containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' | aws ecs register-task-definition --region "${AWS_REGION}" --cli-input-json '{
+    "family": "'${TASK_FAMILY}'",
+    "taskRoleArn": "'$(echo "$TASK_DEFINITION" | jq -r '.taskDefinition.taskRoleArn')'",
+    "executionRoleArn": "'$(echo "$TASK_DEFINITION" | jq -r '.taskDefinition.executionRoleArn')'",
+    "networkMode": "'$(echo "$TASK_DEFINITION" | jq -r '.taskDefinition.networkMode')'",
+    "containerDefinitions": '$(echo "$TASK_DEFINITION" | jq '.taskDefinition.containerDefinitions | map(if .name == "mautic" then . + {"image": "'${ECR_REPOSITORY_URI}:${VERSION}'"} else . end)')',
+    "volumes": '$(echo "$TASK_DEFINITION" | jq -r '.taskDefinition.volumes')',
+    "requiresCompatibilities": ["FARGATE"],
+    "cpu": "'$(echo "$TASK_DEFINITION" | jq -r '.taskDefinition.cpu')'",
+    "memory": "'$(echo "$TASK_DEFINITION" | jq -r '.taskDefinition.memory')'"
+}' --query 'taskDefinition.taskDefinitionArn' --output text)
 
 # Atualizar o serviço com a nova task definition
 echo "Atualizando serviço ECS com nova task definition..."
