@@ -7,13 +7,13 @@ echo "DB_HOST: $MAUTIC_DB_HOST"
 echo "DB_PORT: $MAUTIC_DB_PORT"
 echo "DB_NAME: $MAUTIC_DB_NAME"
 echo "DB_USER: $MAUTIC_DB_USER"
-echo "SITE_URL: $MAUTIC_SITE_URL"
+echo "SITE_URL do workflow: $MAUTIC_SITE_URL"
 echo "Resolvendo DNS do host do banco:"
 getent hosts "$MAUTIC_DB_HOST" || echo "Não foi possível resolver o host"
 echo "==========================="
 
-# Garantir que o SITE_URL tenha um valor padrão
-SITE_URL="${MAUTIC_SITE_URL:-http://localhost}"
+# Usar SITE_URL diretamente do workflow
+SITE_URL="$MAUTIC_SITE_URL"
 echo "Site URL que será usado: $SITE_URL"
 
 # Criar diretórios no EFS
@@ -49,11 +49,6 @@ rm -f /var/www/html/app/config/parameters_local.php
 echo "Criando arquivo local.php..."
 cat > /var/www/html/app/config/local.php << EOF
 <?php
-\$site_url = getenv('MAUTIC_SITE_URL');
-if (empty(\$site_url)) {
-    \$site_url = 'http://localhost';
-}
-
 return [
     'db_driver' => 'pdo_mysql',
     'db_host' => '${MAUTIC_DB_HOST}',
@@ -66,7 +61,7 @@ return [
     'installed' => true,
     'is_installed' => true,
     'db_installed' => true,
-    'site_url' => \$site_url,
+    'site_url' => '${MAUTIC_SITE_URL}',
 ];
 EOF
 
