@@ -4,9 +4,7 @@ set -e
 # Debug básico
 echo "=== Informações de Debug ==="
 echo "Verificando montagem do EFS..."
-df -h | grep media || echo "EFS não está montado"
-echo "Verificando diretório media..."
-ls -la /var/www/html/media || echo "Diretório media ainda não existe"
+df -h | grep html || echo "EFS não está montado"
 echo "Verificando diretório Mautic..."
 ls -la /var/www/html || echo "Diretório Mautic não encontrado"
 echo "==========================="
@@ -14,33 +12,27 @@ echo "==========================="
 # Aguardar montagem do EFS (máximo 30 segundos)
 echo "Aguardando montagem do EFS..."
 counter=0
-while [ ! -d "/var/www/html/media" ] && [ $counter -lt 30 ]; do
+while [ ! -d "/var/www/html" ] && [ $counter -lt 30 ]; do
     sleep 1
     counter=$((counter+1))
     echo "Tentativa $counter de 30..."
 done
 
-if [ ! -d "/var/www/html/media" ]; then
+if [ ! -d "/var/www/html" ]; then
     echo "ERRO: EFS não montado após 30 segundos"
     exit 1
 fi
 
-# Criar estrutura de diretórios no EFS
-echo "Configurando diretórios persistentes..."
+# Criar estrutura de diretórios se não existir
+echo "Configurando diretórios..."
 mkdir -p /var/www/html/media/images
 mkdir -p /var/www/html/app/config
 mkdir -p /var/www/html/app/cache
 mkdir -p /var/www/html/app/logs
 
 # Configurar permissões
-chown -R www-data:www-data /var/www/html/media
-chmod -R 775 /var/www/html/media
-chown -R www-data:www-data /var/www/html/app/config
-chmod -R 775 /var/www/html/app/config
-chown -R www-data:www-data /var/www/html/app/cache
-chmod -R 775 /var/www/html/app/cache
-chown -R www-data:www-data /var/www/html/app/logs
-chmod -R 775 /var/www/html/app/logs
+chown -R www-data:www-data /var/www/html
+chmod -R 775 /var/www/html
 
 # Garantir que o arquivo .installed existe
 touch /var/www/html/app/config/.installed
@@ -94,6 +86,7 @@ if [ "$ENABLE_WHITELABEL" = "true" ]; then
     mkdir -p /var/www/html/mautic-whitelabeler/assets
     cat > /var/www/html/mautic-whitelabeler/assets/config.json << EOF
 {
+    "mautic_path": "/var/www/html",
     "company_name": "${MAUTIC_COMPANY_NAME:-Mautic}",
     "primary_color": "${MAUTIC_PRIMARY_COLOR:-#4e5e9e}",
     "secondary_color": "${MAUTIC_SECONDARY_COLOR:-#4e5e9e}",
@@ -114,7 +107,7 @@ EOF
 
     # Aplicar Whitelabeling
     cd /var/www/html
-    php mautic-whitelabeler/cli.php --whitelabel
+    php mautic-whitelabeler/cli.php --whitelabel --mautic-path=/var/www/html
     echo "Whitelabeling aplicado com sucesso"
 fi
 

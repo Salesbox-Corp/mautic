@@ -60,7 +60,7 @@ resource "aws_ecs_task_definition" "mautic" {
       mountPoints = [
         {
           sourceVolume  = "mautic-data"
-          containerPath = "/var/www/html/media"
+          containerPath = "/var/www/html"
           readOnly      = false
         }
       ]
