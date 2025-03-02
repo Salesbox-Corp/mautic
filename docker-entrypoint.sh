@@ -23,21 +23,23 @@ if [ ! -d "/var/www/html" ]; then
     exit 1
 fi
 
-# Criar estrutura de diretórios se não existir
+# Criar estrutura de diretórios se não existir (ignorando erros)
 echo "Configurando diretórios..."
-mkdir -p /var/www/html/media/images
-mkdir -p /var/www/html/app/config
-mkdir -p /var/www/html/app/cache
-mkdir -p /var/www/html/app/logs
+mkdir -p /var/www/html/media/images 2>/dev/null || echo "Diretório media/images já existe"
+mkdir -p /var/www/html/app/config 2>/dev/null || echo "Diretório app/config já existe"
+mkdir -p /var/www/html/app/cache 2>/dev/null || echo "Diretório app/cache já existe"
+mkdir -p /var/www/html/app/logs 2>/dev/null || echo "Diretório app/logs já existe"
 
-# Configurar permissões
-chown -R www-data:www-data /var/www/html
-chmod -R 775 /var/www/html
+# Configurar permissões (ignorando erros)
+echo "Configurando permissões..."
+chown -R www-data:www-data /var/www/html 2>/dev/null || echo "Aviso: Alguns arquivos não puderam ter o proprietário alterado"
+chmod -R 775 /var/www/html 2>/dev/null || echo "Aviso: Algumas permissões não puderam ser alteradas"
 
 # Garantir que o arquivo .installed existe
-touch /var/www/html/app/config/.installed
-chown www-data:www-data /var/www/html/app/config/.installed
-chmod 664 /var/www/html/app/config/.installed
+echo "Verificando arquivo .installed..."
+touch /var/www/html/app/config/.installed 2>/dev/null || echo "Aviso: Não foi possível criar/atualizar .installed"
+chown www-data:www-data /var/www/html/app/config/.installed 2>/dev/null || echo "Aviso: Não foi possível alterar proprietário do .installed"
+chmod 664 /var/www/html/app/config/.installed 2>/dev/null || echo "Aviso: Não foi possível alterar permissões do .installed"
 
 echo "Diretórios configurados"
 
@@ -45,10 +47,10 @@ echo "Diretórios configurados"
 if [ ! -f "/var/www/html/app/config/local.php" ]; then
     echo "Criando arquivo de configuração local..."
     if [ -f "/var/www/html/app/config/local.php.dist" ]; then
-        cp /var/www/html/app/config/local.php.dist /var/www/html/app/config/local.php
+        cp /var/www/html/app/config/local.php.dist /var/www/html/app/config/local.php 2>/dev/null || echo "Aviso: Não foi possível copiar local.php.dist"
     else
         echo "Criando configuração padrão..."
-        cat > /var/www/html/app/config/local.php << 'EOF'
+        cat > /var/www/html/app/config/local.php << 'EOF' 2>/dev/null || echo "Aviso: Não foi possível criar local.php"
 <?php
 $parameters = array(
     'db_driver' => 'pdo_mysql',
@@ -66,8 +68,8 @@ $parameters = array(
 );
 EOF
     fi
-    chown www-data:www-data /var/www/html/app/config/local.php
-    chmod 664 /var/www/html/app/config/local.php
+    chown www-data:www-data /var/www/html/app/config/local.php 2>/dev/null || echo "Aviso: Não foi possível alterar proprietário do local.php"
+    chmod 664 /var/www/html/app/config/local.php 2>/dev/null || echo "Aviso: Não foi possível alterar permissões do local.php"
 fi
 
 # Configurar Whitelabeler se necessário
@@ -77,14 +79,14 @@ if [ "$ENABLE_WHITELABEL" = "true" ]; then
     # Clonar o Whitelabeler se não existir
     if [ ! -d "/var/www/html/mautic-whitelabeler" ]; then
         echo "Clonando Whitelabeler..."
-        git clone https://github.com/mautic/mautic-whitelabeler.git /var/www/html/mautic-whitelabeler
-        chown -R www-data:www-data /var/www/html/mautic-whitelabeler
-        chmod -R 775 /var/www/html/mautic-whitelabeler
+        git clone https://github.com/mautic/mautic-whitelabeler.git /var/www/html/mautic-whitelabeler 2>/dev/null || echo "Aviso: Não foi possível clonar Whitelabeler"
+        chown -R www-data:www-data /var/www/html/mautic-whitelabeler 2>/dev/null || echo "Aviso: Não foi possível alterar proprietário do Whitelabeler"
+        chmod -R 775 /var/www/html/mautic-whitelabeler 2>/dev/null || echo "Aviso: Não foi possível alterar permissões do Whitelabeler"
     fi
     
     # Criar config.json para o Whitelabeler
-    mkdir -p /var/www/html/mautic-whitelabeler/assets
-    cat > /var/www/html/mautic-whitelabeler/assets/config.json << EOF
+    mkdir -p /var/www/html/mautic-whitelabeler/assets 2>/dev/null || echo "Diretório assets já existe"
+    cat > /var/www/html/mautic-whitelabeler/assets/config.json << EOF 2>/dev/null || echo "Aviso: Não foi possível criar config.json"
 {
     "mautic_path": "/var/www/html",
     "company_name": "${MAUTIC_COMPANY_NAME:-Mautic}",
@@ -101,14 +103,14 @@ EOF
     # Se tiver uma URL de logo customizada, fazer download
     if [ ! -z "$MAUTIC_CUSTOM_LOGO_URL" ]; then
         echo "Baixando logo customizado..."
-        curl -L "$MAUTIC_CUSTOM_LOGO_URL" -o /var/www/html/media/images/custom_logo.png
-        chmod 644 /var/www/html/media/images/custom_logo.png
+        curl -L "$MAUTIC_CUSTOM_LOGO_URL" -o /var/www/html/media/images/custom_logo.png 2>/dev/null || echo "Aviso: Não foi possível baixar logo customizado"
+        chmod 644 /var/www/html/media/images/custom_logo.png 2>/dev/null || echo "Aviso: Não foi possível alterar permissões do logo"
     fi
 
     # Aplicar Whitelabeling
     cd /var/www/html
-    php mautic-whitelabeler/cli.php --whitelabel --mautic-path=/var/www/html
-    echo "Whitelabeling aplicado com sucesso"
+    php mautic-whitelabeler/cli.php --whitelabel --mautic-path=/var/www/html || echo "Aviso: Não foi possível aplicar Whitelabeling"
+    echo "Processo de Whitelabeling concluído"
 fi
 
 # Executar o comando original
