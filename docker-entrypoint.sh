@@ -3,56 +3,96 @@ set -e
 
 # Debug básico
 echo "=== Informações de Debug ==="
-echo "Verificando diretório do EFS..."
-ls -la /mautic || echo "Diretório /mautic ainda não existe"
+echo "Verificando montagem do EFS..."
+df -h | grep media || echo "EFS não está montado"
+echo "Verificando diretório media..."
+ls -la /var/www/html/media || echo "Diretório media ainda não existe"
+echo "Verificando diretório Mautic..."
+ls -la /var/www/html || echo "Diretório Mautic não encontrado"
 echo "==========================="
 
-# Criar e configurar diretório base do EFS
-echo "Configurando diretório do EFS..."
-mkdir -p /mautic
-chown www-data:www-data /mautic
-chmod 775 /mautic
+# Aguardar montagem do EFS (máximo 30 segundos)
+echo "Aguardando montagem do EFS..."
+counter=0
+while [ ! -d "/var/www/html/media" ] && [ $counter -lt 30 ]; do
+    sleep 1
+    counter=$((counter+1))
+    echo "Tentativa $counter de 30..."
+done
+
+if [ ! -d "/var/www/html/media" ]; then
+    echo "ERRO: EFS não montado após 30 segundos"
+    exit 1
+fi
 
 # Criar estrutura de diretórios no EFS
-mkdir -p /mautic/media/images
-mkdir -p /mautic/config
-mkdir -p /mautic/cache
-mkdir -p /mautic/logs
-mkdir -p /mautic/whitelabeler
+echo "Configurando diretórios persistentes..."
+mkdir -p /var/www/html/media/images
+mkdir -p /var/www/html/app/config
+mkdir -p /var/www/html/app/cache
+mkdir -p /var/www/html/app/logs
 
 # Configurar permissões
-chown -R www-data:www-data /mautic/*
-chmod -R 775 /mautic/*
-
-# Criar links simbólicos para os diretórios do Mautic
-ln -sfn /mautic/media /var/www/html/media
-ln -sfn /mautic/config /var/www/html/app/config
-ln -sfn /mautic/cache /var/www/html/app/cache
-ln -sfn /mautic/logs /var/www/html/app/logs
-ln -sfn /mautic/whitelabeler /var/www/html/mautic-whitelabeler
+chown -R www-data:www-data /var/www/html/media
+chmod -R 775 /var/www/html/media
+chown -R www-data:www-data /var/www/html/app/config
+chmod -R 775 /var/www/html/app/config
+chown -R www-data:www-data /var/www/html/app/cache
+chmod -R 775 /var/www/html/app/cache
+chown -R www-data:www-data /var/www/html/app/logs
+chmod -R 775 /var/www/html/app/logs
 
 # Garantir que o arquivo .installed existe
-touch /mautic/config/.installed
-chown www-data:www-data /mautic/config/.installed
-chmod 664 /mautic/config/.installed
+touch /var/www/html/app/config/.installed
+chown www-data:www-data /var/www/html/app/config/.installed
+chmod 664 /var/www/html/app/config/.installed
 
-echo "Diretórios EFS configurados"
+echo "Diretórios configurados"
+
+# Verificar e copiar arquivos de configuração se necessário
+if [ ! -f "/var/www/html/app/config/local.php" ]; then
+    echo "Criando arquivo de configuração local..."
+    if [ -f "/var/www/html/app/config/local.php.dist" ]; then
+        cp /var/www/html/app/config/local.php.dist /var/www/html/app/config/local.php
+    else
+        echo "Criando configuração padrão..."
+        cat > /var/www/html/app/config/local.php << 'EOF'
+<?php
+$parameters = array(
+    'db_driver' => 'pdo_mysql',
+    'db_host' => getenv('MAUTIC_DB_HOST'),
+    'db_port' => getenv('MAUTIC_DB_PORT'),
+    'db_name' => getenv('MAUTIC_DB_NAME'),
+    'db_user' => getenv('MAUTIC_DB_USER'),
+    'db_password' => getenv('MAUTIC_DB_PASSWORD'),
+    'db_table_prefix' => getenv('MAUTIC_TABLE_PREFIX'),
+    'db_backup_tables' => 1,
+    'db_backup_prefix' => 'bak_',
+    'admin_email' => getenv('MAUTIC_ADMIN_EMAIL'),
+    'admin_password' => getenv('MAUTIC_ADMIN_PASSWORD'),
+    'site_url' => getenv('MAUTIC_URL')
+);
+EOF
+    fi
+    chown www-data:www-data /var/www/html/app/config/local.php
+    chmod 664 /var/www/html/app/config/local.php
+fi
 
 # Configurar Whitelabeler se necessário
 if [ "$ENABLE_WHITELABEL" = "true" ]; then
     echo "=== Configurando Whitelabeler ==="
     
     # Clonar o Whitelabeler se não existir
-    if [ ! -d "/mautic/whitelabeler" ]; then
+    if [ ! -d "/var/www/html/mautic-whitelabeler" ]; then
         echo "Clonando Whitelabeler..."
-        git clone https://github.com/mautic/mautic-whitelabeler.git /mautic/whitelabeler
-        chown -R www-data:www-data /mautic/whitelabeler
-        chmod -R 775 /mautic/whitelabeler
+        git clone https://github.com/mautic/mautic-whitelabeler.git /var/www/html/mautic-whitelabeler
+        chown -R www-data:www-data /var/www/html/mautic-whitelabeler
+        chmod -R 775 /var/www/html/mautic-whitelabeler
     fi
     
     # Criar config.json para o Whitelabeler
-    mkdir -p /mautic/whitelabeler/assets
-    cat > /mautic/whitelabeler/assets/config.json << EOF
+    mkdir -p /var/www/html/mautic-whitelabeler/assets
+    cat > /var/www/html/mautic-whitelabeler/assets/config.json << EOF
 {
     "company_name": "${MAUTIC_COMPANY_NAME:-Mautic}",
     "primary_color": "${MAUTIC_PRIMARY_COLOR:-#4e5e9e}",
@@ -68,37 +108,14 @@ EOF
     # Se tiver uma URL de logo customizada, fazer download
     if [ ! -z "$MAUTIC_CUSTOM_LOGO_URL" ]; then
         echo "Baixando logo customizado..."
-        curl -L "$MAUTIC_CUSTOM_LOGO_URL" -o /mautic/media/images/custom_logo.png
-        chmod 644 /mautic/media/images/custom_logo.png
+        curl -L "$MAUTIC_CUSTOM_LOGO_URL" -o /var/www/html/media/images/custom_logo.png
+        chmod 644 /var/www/html/media/images/custom_logo.png
     fi
 
     # Aplicar Whitelabeling
     cd /var/www/html
-    php /mautic/whitelabeler/cli.php --whitelabel
+    php mautic-whitelabeler/cli.php --whitelabel
     echo "Whitelabeling aplicado com sucesso"
-    
-    # Configurar Apache para o Whitelabeler
-    echo "Configurando Apache para o Whitelabeler..."
-    cat > /etc/apache2/conf-available/whitelabeler.conf << EOF
-Alias /mautic-whitelabeler /mautic/whitelabeler
-<Directory /mautic/whitelabeler>
-    Options Indexes FollowSymLinks
-    AllowOverride All
-    Require all granted
-</Directory>
-EOF
-    a2enconf whitelabeler
-    service apache2 reload
-
-    echo "==================================="
-fi
-
-# Verificar e copiar arquivos de configuração se necessário
-if [ ! -f "/mautic/config/local.php" ]; then
-    echo "Criando arquivo de configuração local..."
-    cp /var/www/html/app/config/local.php.dist /mautic/config/local.php
-    chown www-data:www-data /mautic/config/local.php
-    chmod 664 /mautic/config/local.php
 fi
 
 # Executar o comando original
