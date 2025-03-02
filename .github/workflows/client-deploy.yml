@@ -31,25 +31,16 @@ on:
       custom_url:
         description: 'URL customizada do Mautic (ex: mautic.seudominio.com.br)'
         required: true
-      is_first_install:
-        description: 'É primeira instalação deste ambiente?'
-        required: true
-        type: boolean
-        default: false
-      admin_credentials:
-        description: 'Credenciais do admin (apenas primeira instalação) - formato: email,senha,nome,sobrenome'
+      custom_logo_url:
+        description: 'URL do logo customizado'
         required: false
-      mailer_config:
-        description: 'Configuração de email (apenas primeira instalação) - formato: nome,email'
+      primary_color:
+        description: 'Cor primária do tema (hex)'
         required: false
-      theme:
-        description: 'Tema do Mautic (opcional)'
+        default: '#4e5e9e'
+      company_name:
+        description: 'Nome da empresa para personalização'
         required: false
-        default: 'default'
-      locale:
-        description: 'Localização (opcional)'
-        required: false
-        default: 'pt_BR'
 
 jobs:
   prepare:
@@ -60,7 +51,6 @@ jobs:
       environment: ${{ steps.extract.outputs.environment }}
       version: ${{ steps.extract.outputs.version }}
       aws_region: ${{ steps.extract.outputs.aws_region }}
-      is_first_install: ${{ steps.check_install.outputs.is_first_install }}
       custom_url: ${{ steps.extract.outputs.custom_url }}
     steps:
       - uses: actions/checkout@v4
@@ -82,24 +72,6 @@ jobs:
               echo "environment=$ENV" >> $GITHUB_OUTPUT
               echo "version=latest" >> $GITHUB_OUTPUT
               echo "aws_region=us-east-2" >> $GITHUB_OUTPUT
-            fi
-          fi
-
-      - id: check_install
-        run: |
-          # Verificar se o ambiente já está instalado no config.json
-          IS_INSTALLED=$(jq -r ".clients.\"${{ steps.extract.outputs.client }}\".environments.\"${{ steps.extract.outputs.environment }}\".installed" clients/config.json)
-          
-          if [[ "$IS_INSTALLED" == "true" ]]; then
-            echo "is_first_install=false" >> $GITHUB_OUTPUT
-          else
-            echo "is_first_install=true" >> $GITHUB_OUTPUT
-            
-            # Se for primeira instalação, validar campos obrigatórios
-            if [[ -z "${{ github.event.inputs.admin_credentials }}" ]] || 
-               [[ -z "${{ github.event.inputs.mailer_config }}" ]]; then
-              echo "Erro: Todos os campos de administrador são obrigatórios na primeira instalação"
-              exit 1
             fi
           fi
 
@@ -135,77 +107,17 @@ jobs:
           echo "MAUTIC_DB_USER=${{ secrets.MAUTIC_DB_USER }}" >> $GITHUB_ENV
           echo "MAUTIC_DB_PASSWORD=${{ secrets.MAUTIC_DB_PASSWORD }}" >> $GITHUB_ENV
           echo "MAUTIC_SITE_URL=https://${{ needs.prepare.outputs.custom_url }}" >> $GITHUB_ENV
-          
-          # Se uma URL personalizada foi fornecida, salvar no config.json
-          if [ ! -z "${{ github.event.inputs.custom_logo_url }}" ]; then
-            LOGO_URL="${{ github.event.inputs.custom_logo_url }}"
-            # Verificar se o cliente já existe no config.json
-            if jq -e ".clients.\"${{ needs.prepare.outputs.client }}\"" clients/config.json > /dev/null; then
-              # Cliente existe, verificar se a URL é diferente
-              CURRENT_URL=$(jq -r ".clients.\"${{ needs.prepare.outputs.client }}\".logo_url" clients/config.json)
-              if [ "$CURRENT_URL" != "$LOGO_URL" ]; then
-                # URL é diferente, atualizar
-                jq --arg logo "$LOGO_URL" --arg client "${{ needs.prepare.outputs.client }}" '.clients[$client].logo_url = $logo' clients/config.json > clients/config.json.tmp
-                mv clients/config.json.tmp clients/config.json
-                
-                # Configurar Git
-                git config --global user.name "GitHub Actions Bot"
-                git config --global user.email "actions@github.com"
-                
-                # Commit e push das alterações
-                git add clients/config.json
-                git commit -m "chore: atualiza logo_url para cliente ${{ needs.prepare.outputs.client }}"
-                git push origin HEAD:main
-              fi
-            else
-              # Cliente não existe, criar novo
-              jq --arg logo "$LOGO_URL" --arg client "${{ needs.prepare.outputs.client }}" \
-                 --arg env "${{ needs.prepare.outputs.environment }}" \
-                 --arg version "${{ needs.prepare.outputs.version }}" \
-                 '.clients[$client] = {
-                    "logo_url": $logo,
-                    "environments": {
-                      ($env): {
-                        "installed": false,
-                        "version": $version
-                      }
-                    }
-                  }' clients/config.json > clients/config.json.tmp
-              mv clients/config.json.tmp clients/config.json
-              
-              # Configurar Git
-              git config --global user.name "GitHub Actions Bot"
-              git config --global user.email "actions@github.com"
-              
-              # Commit e push das alterações
-              git add clients/config.json
-              git commit -m "chore: adiciona configuração para cliente ${{ needs.prepare.outputs.client }}"
-              git push origin HEAD:main
-            fi
-            echo "MAUTIC_CUSTOM_LOGO_URL=$LOGO_URL" >> $GITHUB_ENV
-          else
-            # Tentar ler logo_url do config.json
-            if [ -f clients/config.json ]; then
-              CLIENT_LOGO_URL=$(jq -r ".clients.\"${{ needs.prepare.outputs.client }}\".logo_url" clients/config.json)
-              if [ "$CLIENT_LOGO_URL" != "null" ]; then
-                echo "MAUTIC_CUSTOM_LOGO_URL=$CLIENT_LOGO_URL" >> $GITHUB_ENV
-              fi
-            fi
-          fi
 
-          # Se for primeira instalação, configurar variáveis de admin
-          if [[ "${{ needs.prepare.outputs.is_first_install }}" == "true" ]]; then
-            # Extrair valores do campo admin_credentials
-            IFS=',' read -r EMAIL SENHA NOME SOBRENOME <<< "${{ github.event.inputs.admin_credentials }}"
-            echo "MAUTIC_ADMIN_EMAIL=$EMAIL" >> $GITHUB_ENV
-            echo "MAUTIC_ADMIN_PASSWORD=$SENHA" >> $GITHUB_ENV
-            echo "MAUTIC_ADMIN_FIRSTNAME=$NOME" >> $GITHUB_ENV
-            echo "MAUTIC_ADMIN_LASTNAME=$SOBRENOME" >> $GITHUB_ENV
-            
-            # Extrair valores do campo mailer_config
-            IFS=',' read -r NOME_EMAIL EMAIL_FROM <<< "${{ github.event.inputs.mailer_config }}"
-            echo "MAUTIC_ADMIN_FROM_NAME=$NOME_EMAIL" >> $GITHUB_ENV
-            echo "MAUTIC_ADMIN_FROM_EMAIL=$EMAIL_FROM" >> $GITHUB_ENV
+          # Configurações do Whitelabeler
+          echo "ENABLE_WHITELABEL=true" >> $GITHUB_ENV
+          if [ ! -z "${{ github.event.inputs.custom_logo_url }}" ]; then
+            echo "MAUTIC_CUSTOM_LOGO_URL=${{ github.event.inputs.custom_logo_url }}" >> $GITHUB_ENV
+          fi
+          if [ ! -z "${{ github.event.inputs.primary_color }}" ]; then
+            echo "MAUTIC_PRIMARY_COLOR=${{ github.event.inputs.primary_color }}" >> $GITHUB_ENV
+          fi
+          if [ ! -z "${{ github.event.inputs.company_name }}" ]; then
+            echo "MAUTIC_COMPANY_NAME=${{ github.event.inputs.company_name }}" >> $GITHUB_ENV
           fi
 
       - name: Configure AWS credentials
@@ -225,43 +137,7 @@ jobs:
         run: |
           ./scripts/deploy-client.sh $CLIENT $ENVIRONMENT $VERSION $AWS_REGION
 
-      - name: Update Installation Status
-        if: success()
-        run: |
-          # Atualizar status de instalação no config.json
-          jq --arg client "$CLIENT" \
-             --arg env "$ENVIRONMENT" \
-             --arg version "$VERSION" \
-             '.clients[$client].environments[$env] = {
-                "installed": true,
-                "version": $version,
-                "last_update": (now | strftime("%Y-%m-%d %H:%M:%S"))
-              }' clients/config.json > clients/config.json.tmp
-          mv clients/config.json.tmp clients/config.json
-          
-          # Commit e push das alterações
-          git config --global user.name "GitHub Actions Bot"
-          git config --global user.email "actions@github.com"
-          git add clients/config.json
-          git commit -m "chore: atualiza status de instalação para $CLIENT-$ENVIRONMENT"
-          git push origin HEAD:main
-
       - name: Verify Deployment
         run: |
-          # Verificar se o serviço está estável
-          ECS_CLUSTER="mautic-${CLIENT}-${ENVIRONMENT}-cluster"
-          ECS_SERVICE="mautic-${CLIENT}-${ENVIRONMENT}-service"
-          
-          # Obter status do serviço
-          SERVICE_STATUS=$(aws ecs describe-services --cluster $ECS_CLUSTER --services $ECS_SERVICE --region $AWS_REGION --query 'services[0].status' --output text)
-          
-          if [ "$SERVICE_STATUS" != "ACTIVE" ]; then
-            echo "Erro: Serviço ECS não está ativo. Status atual: $SERVICE_STATUS"
-            exit 1
-          fi
-          
-          # Obter URL do load balancer
-          ALB_DNS=$(aws elbv2 describe-load-balancers --names "mautic-${CLIENT}-${ENVIRONMENT}-alb" --region $AWS_REGION --query 'LoadBalancers[0].DNSName' --output text)
-          
-          echo "Deployment verificado com sucesso!"
-          echo "Aplicação disponível em: https://$ALB_DNS" 
+          echo "Verificando deployment para $CLIENT-$ENVIRONMENT"
+          echo "URL: $MAUTIC_SITE_URL" 
