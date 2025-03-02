@@ -18,6 +18,7 @@ mkdir -p /mautic/media/images
 mkdir -p /mautic/config
 mkdir -p /mautic/cache
 mkdir -p /mautic/logs
+mkdir -p /mautic/whitelabeler
 
 # Configurar permissões
 chown -R www-data:www-data /mautic/*
@@ -28,6 +29,7 @@ ln -sfn /mautic/media /var/www/html/media
 ln -sfn /mautic/config /var/www/html/app/config
 ln -sfn /mautic/cache /var/www/html/app/cache
 ln -sfn /mautic/logs /var/www/html/app/logs
+ln -sfn /mautic/whitelabeler /var/www/html/mautic-whitelabeler
 
 # Garantir que o arquivo .installed existe
 touch /mautic/config/.installed
@@ -40,9 +42,17 @@ echo "Diretórios EFS configurados"
 if [ "$ENABLE_WHITELABEL" = "true" ]; then
     echo "=== Configurando Whitelabeler ==="
     
+    # Clonar o Whitelabeler se não existir
+    if [ ! -d "/mautic/whitelabeler" ]; then
+        echo "Clonando Whitelabeler..."
+        git clone https://github.com/mautic/mautic-whitelabeler.git /mautic/whitelabeler
+        chown -R www-data:www-data /mautic/whitelabeler
+        chmod -R 775 /mautic/whitelabeler
+    fi
+    
     # Criar config.json para o Whitelabeler
-    mkdir -p /var/www/html/mautic-whitelabeler/assets
-    cat > /var/www/html/mautic-whitelabeler/assets/config.json << EOF
+    mkdir -p /mautic/whitelabeler/assets
+    cat > /mautic/whitelabeler/assets/config.json << EOF
 {
     "company_name": "${MAUTIC_COMPANY_NAME:-Mautic}",
     "primary_color": "${MAUTIC_PRIMARY_COLOR:-#4e5e9e}",
@@ -64,8 +74,22 @@ EOF
 
     # Aplicar Whitelabeling
     cd /var/www/html
-    php mautic-whitelabeler/cli.php --whitelabel
+    php /mautic/whitelabeler/cli.php --whitelabel
     echo "Whitelabeling aplicado com sucesso"
+    
+    # Configurar Apache para o Whitelabeler
+    echo "Configurando Apache para o Whitelabeler..."
+    cat > /etc/apache2/conf-available/whitelabeler.conf << EOF
+Alias /mautic-whitelabeler /mautic/whitelabeler
+<Directory /mautic/whitelabeler>
+    Options Indexes FollowSymLinks
+    AllowOverride All
+    Require all granted
+</Directory>
+EOF
+    a2enconf whitelabeler
+    service apache2 reload
+
     echo "==================================="
 fi
 
