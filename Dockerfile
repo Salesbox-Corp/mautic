@@ -5,10 +5,24 @@ RUN apt-get update && apt-get install -y \
     default-mysql-client \
     imagemagick \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Definir diretório de trabalho
 WORKDIR /var/www/html
+
+# Instalar Whitelabeler
+RUN cd /var/www/html && \
+    git clone https://github.com/nickian/mautic-whitelabeler.git && \
+    chown -R www-data:www-data mautic-whitelabeler && \
+    # Configurar Apache para permitir acesso ao Whitelabeler
+    echo "Alias /mautic-whitelabeler /var/www/html/mautic-whitelabeler" > /etc/apache2/conf-available/mautic-whitelabeler.conf && \
+    echo "<Directory /var/www/html/mautic-whitelabeler>" >> /etc/apache2/conf-available/mautic-whitelabeler.conf && \
+    echo "    Options Indexes FollowSymLinks" >> /etc/apache2/conf-available/mautic-whitelabeler.conf && \
+    echo "    AllowOverride All" >> /etc/apache2/conf-available/mautic-whitelabeler.conf && \
+    echo "    Require all granted" >> /etc/apache2/conf-available/mautic-whitelabeler.conf && \
+    echo "</Directory>" >> /etc/apache2/conf-available/mautic-whitelabeler.conf && \
+    a2enconf mautic-whitelabeler
 
 # Criar diretórios básicos
 RUN mkdir -p /var/www/html/app/cache \
