@@ -20,8 +20,8 @@ RUN mkdir -p /var/www/html/app/cache /var/www/html/app/logs \
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Definir usuário não-root
-USER www-data
+# Não definimos o usuário como www-data para permitir que o Apache possa vincular à porta 80
+# O Apache internamente mudará para www-data após vincular às portas
 
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["apache2-foreground"]
