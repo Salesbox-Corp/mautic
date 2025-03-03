@@ -104,31 +104,18 @@ create_symlink "/mautic/logs" "/var/www/html/app/logs"
 log_info "Verificando arquivo .installed..."
 touch /mautic/config/.installed 2>/dev/null || log_warning "Não foi possível criar arquivo .installed"
 
-# Ajustar permissões com máximos privilégios
-log_info "Ajustando permissões com privilégios máximos..."
+# Ajustar permissões do EFS
+log_info "Ajustando permissões do EFS..."
 chmod -R 777 /mautic 2>/dev/null || log_warning "Erro ao ajustar permissões do EFS"
-chmod -R 777 /var/www/html 2>/dev/null || log_warning "Erro ao ajustar permissões do diretório web"
 
-# Garantir que o Apache tenha acesso total aos diretórios necessários
-log_info "Configurando permissões para o Apache..."
-
-# Diretórios críticos para o Apache
-for dir in "/var/log/apache2" "/var/run/apache2" "/var/lock/apache2" "/etc/apache2"; do
-    if [ -d "$dir" ]; then
-        chmod -R 777 "$dir" 2>/dev/null || log_warning "Não foi possível ajustar permissões para: $dir"
-    else
-        mkdir -p "$dir" 2>/dev/null
-        chmod -R 777 "$dir" 2>/dev/null || log_warning "Não foi possível criar/ajustar permissões para: $dir"
-    fi
-done
-
-# Verificar se estamos rodando como root (necessário para usar a porta 80)
-if [ "$(id -u)" != "0" ]; then
-    log_warning "Não estamos rodando como root, o que pode causar problemas com a porta 80"
+# Configurar Apache para usar porta 8080
+log_info "Configurando porta do Apache..."
+if [ -f /etc/apache2/ports.conf ]; then
+    sed -i 's/Listen 80/Listen 8080/g' /etc/apache2/ports.conf 2>/dev/null || log_warning "Não foi possível alterar a porta do Apache"
 fi
 
-log_success "Configuração de persistência concluída com permissões máximas"
-log_info "Iniciando Apache como processo principal..."
+log_success "Configuração de persistência concluída"
+log_info "Iniciando processo principal na porta 8080..."
 
-# Executar comando original (que deve ser apache2-foreground)
+# Executar comando original
 exec "$@"
