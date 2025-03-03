@@ -104,18 +104,8 @@ create_symlink "/mautic/logs" "/var/www/html/app/logs"
 log_info "Verificando arquivo .installed..."
 touch /mautic/config/.installed 2>/dev/null || log_warning "Não foi possível criar arquivo .installed"
 
-# Ajustar permissões do EFS
-log_info "Ajustando permissões do EFS..."
-chmod -R 777 /mautic 2>/dev/null || log_warning "Erro ao ajustar permissões do EFS"
-
-# Configurar Apache para usar porta 8080
-log_info "Configurando porta do Apache..."
-if [ -f /etc/apache2/ports.conf ]; then
-    sed -i 's/Listen 80/Listen 8080/g' /etc/apache2/ports.conf 2>/dev/null || log_warning "Não foi possível alterar a porta do Apache"
-fi
-
 log_success "Configuração de persistência concluída"
-log_info "Iniciando processo principal na porta 8080..."
+log_info "Iniciando processo principal..."
 
 # Executar comando original
 exec "$@"
