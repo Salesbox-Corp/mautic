@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /var/www/html
 
 # Criar diretórios essenciais (ajustados para estrutura correta do Mautic)
-RUN mkdir -p /var/www/html/media /var/www/html/config /var/www/html/var/cache /var/www/html/var/logs
+RUN mkdir -p /var/www/html/media /var/www/html/app/config /var/www/html/app/cache /var/www/html/app/logs
 
 # Instalar mautic-whitelabeler usando curl em vez de git
 RUN curl -L -o /tmp/mautic-whitelabeler.zip https://github.com/nickian/mautic-whitelabeler/archive/refs/heads/master.zip \
@@ -38,6 +38,10 @@ RUN echo '#!/bin/bash\n\
 if [ -z "$(ls -A /var/www/html)" ]; then\n\
     echo "Diretório vazio, copiando arquivos do Mautic..."\n\
     cp -R /usr/src/mautic/* /var/www/html/\n\
+    # Criar diretórios essenciais após a cópia\n\
+    mkdir -p /var/www/html/media /var/www/html/app/config /var/www/html/app/cache /var/www/html/app/logs\n\
+    # Garantir permissões corretas\n\
+    chmod -R 777 /var/www/html\n\
 else\n\
     echo "Arquivos do Mautic detectados, mantendo existentes."\n\
 fi\n\
