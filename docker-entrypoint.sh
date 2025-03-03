@@ -30,52 +30,46 @@ if ! df -h | grep -q /mautic; then
     exit 1
 fi
 
-# Se o Mautic ainda não foi copiado para o EFS, fazer a cópia inicial
-if [ ! -d "/mautic/html" ]; then
-    echo "📂 Copiando Mautic para o EFS pela primeira vez..."
-    mkdir -p /mautic/html
-    cp -R /var/www/html/* /mautic/html/
-    chown -R www-data:www-data /mautic/html
-    chmod -R 775 /mautic/html
-else
-    echo "✅ Mautic já está salvo no EFS. Pulando cópia."
-fi
-
-# **Evitar remoção de diretórios que já são volumes montados no EFS**
-echo "🔍 Verificando volumes para evitar conflitos..."
-for dir in "/var/www/html/app/logs" "/var/www/html/app/cache"; do
-    if mount | grep -q "$dir"; then
-        echo "⚠️ $dir já é um volume montado. Pulando remoção."
-    else
-        echo "🗑️ Tentando limpar $dir para recriação do symlink..."
-        rm -rf "$dir" 2>/dev/null || echo "⚠️ Falha ao remover $dir, ignorando."
-    fi
-done
-
-# **Corrigir permissões de diretórios antes de criar os symlinks**
-echo "🔧 Ajustando permissões antes de criar symlinks..."
-find /mautic -type d -exec chmod 775 {} +
-find /mautic -type f -exec chmod 664 {} +
-chown -R www-data:www-data /mautic
-
-# **Criar symlink de /var/www/html para o EFS se ainda não existir**
-if [ ! -L "/var/www/html" ] && [ ! -d "/var/www/html" ]; then
-    echo "🔗 Criando symlink de /var/www/html para o EFS..."
-    ln -s /mautic/html /var/www/html
-fi
-
 # Criar diretórios essenciais no EFS, se não existirem
 echo "📂 Criando diretórios persistentes no EFS..."
 mkdir -p /mautic/media/images /mautic/config /mautic/cache /mautic/logs /mautic/plugins /mautic/translations
 
-# Criar symlinks para persistência de diretórios internos
-echo "🔗 Criando symlinks para diretórios essenciais..."
-[ -L "/var/www/html/media" ] || ln -sf /mautic/media /var/www/html/media
-[ -L "/var/www/html/app/config" ] || ln -sf /mautic/config /var/www/html/app/config
-[ -L "/var/www/html/app/cache" ] || ln -sf /mautic/cache /var/www/html/app/cache
-[ -L "/var/www/html/app/logs" ] || ln -sf /mautic/logs /var/www/html/app/logs
-[ -L "/var/www/html/plugins" ] || ln -sf /mautic/plugins /var/www/html/plugins
-[ -L "/var/www/html/translations" ] || ln -sf /mautic/translations /var/www/html/translations
+# **Evitar loops de symlinks**
+echo "🔗 Verificando e criando symlinks para persistência..."
+
+symlink_safe() {
+    local target=$1
+    local link=$2
+
+    # Se já existir como diretório real, não criar symlink
+    if [ -d "$link" ] && [ ! -L "$link" ]; then
+        echo "✅ $link já é um diretório real, pulando symlink."
+        return
+    fi
+
+    # Se já existir como symlink quebrado, removê-lo
+    if [ -L "$link" ] && [ ! -e "$link" ]; then
+        echo "🗑️ Removendo symlink quebrado: $link"
+        rm -f "$link"
+    fi
+
+    # Criar symlink seguro
+    echo "🔗 Criando symlink: $link -> $target"
+    ln -sf "$target" "$link"
+}
+
+symlink_safe "/mautic/media" "/var/www/html/media"
+symlink_safe "/mautic/config" "/var/www/html/app/config"
+symlink_safe "/mautic/cache" "/var/www/html/app/cache"
+symlink_safe "/mautic/logs" "/var/www/html/app/logs"
+symlink_safe "/mautic/plugins" "/var/www/html/plugins"
+symlink_safe "/mautic/translations" "/var/www/html/translations"
+
+# **Corrigir permissões sem afetar symlinks**
+echo "🔧 Ajustando permissões antes de iniciar..."
+find /mautic -type d -exec chmod 775 {} +
+find /mautic -type f -exec chmod 664 {} +
+chown -R www-data:www-data /mautic
 
 # Garantir que o arquivo .installed existe para evitar reinstalação
 echo "🛠️ Verificando arquivo .installed..."
