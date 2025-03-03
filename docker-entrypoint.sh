@@ -15,10 +15,6 @@ if ! df -h | grep -q /mautic; then
 fi
 log_success "EFS está montado em /mautic"
 
-# Parar Apache temporariamente
-log_info "Parando Apache temporariamente..."
-service apache2 stop || log_warning "Apache não pôde ser parado"
-
 # Verificar e corrigir possíveis links simbólicos circulares
 log_info "Verificando links simbólicos existentes..."
 for link in "/var/www/html/media" "/var/www/html/app/config" "/var/www/html/app/cache" "/var/www/html/app/logs"; do
@@ -113,11 +109,24 @@ log_info "Ajustando permissões..."
 chown -R www-data:www-data /mautic 2>/dev/null || log_warning "Erro ao ajustar proprietário"
 chmod -R 775 /mautic 2>/dev/null || log_warning "Erro ao ajustar permissões"
 
-# Iniciar Apache
-log_info "Iniciando Apache..."
-service apache2 start || log_error "Erro ao iniciar Apache"
+# Verificar e corrigir configuração do Apache
+log_info "Verificando configuração do Apache..."
 
+# Verificar se a variável APACHE_DOCUMENT_ROOT está definida
+if grep -q '\${APACHE_DOCUMENT_ROOT}' /etc/apache2/sites-available/000-default.conf; then
+    log_info "Corrigindo configuração do Apache..."
+    # Substituir a variável não definida pelo caminho correto
+    sed -i 's|\${APACHE_DOCUMENT_ROOT}|/var/www/html|g' /etc/apache2/sites-available/000-default.conf || log_warning "Não foi possível corrigir a configuração do Apache"
+fi
+
+# Garantir que o Apache possa ser executado como www-data
+log_info "Ajustando permissões do Apache..."
+chown -R www-data:www-data /var/log/apache2 2>/dev/null || log_warning "Não foi possível ajustar permissões de logs do Apache"
+chown -R www-data:www-data /var/run/apache2 2>/dev/null || log_warning "Não foi possível ajustar permissões de run do Apache"
+
+# Executar o Apache como comando original em vez de tentar iniciá-lo aqui
 log_success "Configuração de persistência concluída"
+log_info "Iniciando Apache como processo principal..."
 
-# Executar comando original
+# Executar comando original (que deve ser apache2-foreground)
 exec "$@"
