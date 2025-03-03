@@ -19,80 +19,101 @@ log_success "EFS está montado em /mautic"
 log_info "Parando Apache temporariamente..."
 service apache2 stop || log_warning "Apache não pôde ser parado"
 
-# Diretórios essenciais para persistência
-log_info "Configurando persistência básica..."
+# Verificar e corrigir possíveis links simbólicos circulares
+log_info "Verificando links simbólicos existentes..."
+for link in "/var/www/html/media" "/var/www/html/app/config" "/var/www/html/app/cache" "/var/www/html/app/logs"; do
+    if [ -L "$link" ]; then
+        log_info "Removendo link simbólico existente: $link"
+        rm -f "$link" || log_warning "Não foi possível remover link: $link"
+    fi
+done
 
-# 1. Criar diretórios essenciais no EFS
-log_info "Criando diretórios essenciais no EFS..."
-mkdir -p /mautic/media 2>/dev/null || log_warning "Diretório media já existe"
-mkdir -p /mautic/config 2>/dev/null || log_warning "Diretório config já existe"
-mkdir -p /mautic/cache 2>/dev/null || log_warning "Diretório cache já existe"
-mkdir -p /mautic/logs 2>/dev/null || log_warning "Diretório logs já existe"
+# Verificar e corrigir possíveis links simbólicos circulares no EFS
+log_info "Verificando diretórios no EFS..."
+for dir in "/mautic/media" "/mautic/config" "/mautic/cache" "/mautic/logs"; do
+    if [ -L "$dir" ]; then
+        log_info "Removendo link simbólico no EFS: $dir"
+        rm -f "$dir" || log_warning "Não foi possível remover link no EFS: $dir"
+    fi
+done
 
-# 2. Garantir que o Mautic tenha os diretórios necessários
-log_info "Verificando diretórios do Mautic..."
-mkdir -p /var/www/html/app/config 2>/dev/null || log_warning "Diretório app/config já existe"
-mkdir -p /var/www/html/app/cache 2>/dev/null || log_warning "Diretório app/cache já existe"
-mkdir -p /var/www/html/app/logs 2>/dev/null || log_warning "Diretório app/logs já existe"
-mkdir -p /var/www/html/media 2>/dev/null || log_warning "Diretório media já existe"
+# Criar diretórios no EFS com tratamento de erro
+log_info "Criando diretórios no EFS..."
+for dir in "media" "config" "cache" "logs"; do
+    if ! mkdir -p "/mautic/$dir" 2>/dev/null; then
+        log_warning "Não foi possível criar diretório: /mautic/$dir"
+        
+        # Tentar corrigir o problema
+        log_info "Tentando corrigir o diretório: /mautic/$dir"
+        rm -rf "/mautic/$dir" 2>/dev/null
+        if mkdir -p "/mautic/$dir" 2>/dev/null; then
+            log_success "Diretório corrigido: /mautic/$dir"
+        else
+            log_error "Falha ao criar diretório: /mautic/$dir"
+            # Continuar mesmo com erro
+        fi
+    else
+        log_success "Diretório criado: /mautic/$dir"
+    fi
+done
 
-# 3. Copiar dados existentes para o EFS (apenas na primeira execução)
-log_info "Copiando dados existentes para o EFS (se necessário)..."
+# Backup dos dados originais (se existirem)
+log_info "Verificando dados existentes..."
+
+# Media
 if [ -d "/var/www/html/media" ] && [ ! -L "/var/www/html/media" ] && [ "$(ls -A /var/www/html/media 2>/dev/null)" ]; then
-    log_info "Copiando arquivos de media para o EFS..."
+    log_info "Copiando arquivos de media..."
     cp -a /var/www/html/media/* /mautic/media/ 2>/dev/null || log_warning "Erro ao copiar arquivos de media"
 fi
 
+# Config
 if [ -d "/var/www/html/app/config" ] && [ ! -L "/var/www/html/app/config" ] && [ "$(ls -A /var/www/html/app/config 2>/dev/null)" ]; then
-    log_info "Copiando arquivos de configuração para o EFS..."
+    log_info "Copiando arquivos de configuração..."
     cp -a /var/www/html/app/config/* /mautic/config/ 2>/dev/null || log_warning "Erro ao copiar arquivos de configuração"
 fi
 
-# 4. Remover diretórios originais e criar links simbólicos
-log_info "Configurando links simbólicos..."
+# Criar links simbólicos
+log_info "Criando links simbólicos..."
 
-# Media
-if [ -d "/var/www/html/media" ] && [ ! -L "/var/www/html/media" ]; then
-    rm -rf /var/www/html/media
-    log_info "Diretório media removido"
-fi
-ln -sf /mautic/media /var/www/html/media
-log_success "Link para media criado"
+# Função para criar link simbólico com segurança
+create_symlink() {
+    local target="$1"
+    local link="$2"
+    
+    # Remover diretório original se existir
+    if [ -d "$link" ] && [ ! -L "$link" ]; then
+        rm -rf "$link" 2>/dev/null || log_warning "Não foi possível remover diretório: $link"
+    fi
+    
+    # Remover link antigo se existir
+    if [ -L "$link" ]; then
+        rm -f "$link" 2>/dev/null || log_warning "Não foi possível remover link antigo: $link"
+    fi
+    
+    # Criar novo link
+    if ln -sf "$target" "$link" 2>/dev/null; then
+        log_success "Link criado: $link -> $target"
+    else
+        log_warning "Não foi possível criar link: $link -> $target"
+    fi
+}
 
-# Config
-if [ -d "/var/www/html/app/config" ] && [ ! -L "/var/www/html/app/config" ]; then
-    rm -rf /var/www/html/app/config
-    log_info "Diretório config removido"
-fi
-ln -sf /mautic/config /var/www/html/app/config
-log_success "Link para config criado"
+# Criar links para os diretórios principais
+create_symlink "/mautic/media" "/var/www/html/media"
+create_symlink "/mautic/config" "/var/www/html/app/config"
+create_symlink "/mautic/cache" "/var/www/html/app/cache"
+create_symlink "/mautic/logs" "/var/www/html/app/logs"
 
-# Cache
-if [ -d "/var/www/html/app/cache" ] && [ ! -L "/var/www/html/app/cache" ]; then
-    rm -rf /var/www/html/app/cache
-    log_info "Diretório cache removido"
-fi
-ln -sf /mautic/cache /var/www/html/app/cache
-log_success "Link para cache criado"
-
-# Logs
-if [ -d "/var/www/html/app/logs" ] && [ ! -L "/var/www/html/app/logs" ]; then
-    rm -rf /var/www/html/app/logs
-    log_info "Diretório logs removido"
-fi
-ln -sf /mautic/logs /var/www/html/app/logs
-log_success "Link para logs criado"
-
-# 5. Garantir arquivo .installed
+# Garantir arquivo .installed
 log_info "Verificando arquivo .installed..."
 touch /mautic/config/.installed 2>/dev/null || log_warning "Não foi possível criar arquivo .installed"
 
-# 6. Ajustar permissões
+# Ajustar permissões
 log_info "Ajustando permissões..."
 chown -R www-data:www-data /mautic 2>/dev/null || log_warning "Erro ao ajustar proprietário"
 chmod -R 775 /mautic 2>/dev/null || log_warning "Erro ao ajustar permissões"
 
-# 7. Iniciar Apache
+# Iniciar Apache
 log_info "Iniciando Apache..."
 service apache2 start || log_error "Erro ao iniciar Apache"
 
