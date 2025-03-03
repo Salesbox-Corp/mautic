@@ -23,15 +23,36 @@ if [ ! -d "/var/www/html" ]; then
     exit 1
 fi
 
-# Criar estrutura de diretórios se não existir (ignorando erros)
+# Verificar e criar diretórios necessários
 echo "Configurando diretórios..."
-mkdir -p /var/www/html/media/images 2>/dev/null || echo "Diretório media/images já existe"
+
+# Verificar se media é um symlink e criar estrutura apropriada
+if [ -L "/var/www/html/media" ]; then
+    echo "Media é um symlink, verificando destino..."
+    MEDIA_TARGET=$(readlink "/var/www/html/media")
+    echo "Media aponta para: $MEDIA_TARGET"
+    
+    # Criar diretórios no destino do symlink
+    mkdir -p "${MEDIA_TARGET}/images" 2>/dev/null || echo "Diretório ${MEDIA_TARGET}/images já existe"
+else
+    echo "Media não é um symlink, criando diretório padrão..."
+    mkdir -p /var/www/html/media/images 2>/dev/null || echo "Diretório media/images já existe"
+fi
+
+# Criar outros diretórios necessários
 mkdir -p /var/www/html/app/config 2>/dev/null || echo "Diretório app/config já existe"
 mkdir -p /var/www/html/app/cache 2>/dev/null || echo "Diretório app/cache já existe"
 mkdir -p /var/www/html/app/logs 2>/dev/null || echo "Diretório app/logs já existe"
 
 # Configurar permissões (ignorando erros)
 echo "Configurando permissões..."
+if [ -L "/var/www/html/media" ]; then
+    MEDIA_TARGET=$(readlink "/var/www/html/media")
+    echo "Configurando permissões do diretório media: $MEDIA_TARGET"
+    chown -R www-data:www-data "$MEDIA_TARGET" 2>/dev/null || echo "Aviso: Alguns arquivos em $MEDIA_TARGET não puderam ter o proprietário alterado"
+    chmod -R 775 "$MEDIA_TARGET" 2>/dev/null || echo "Aviso: Algumas permissões em $MEDIA_TARGET não puderam ser alteradas"
+fi
+
 chown -R www-data:www-data /var/www/html 2>/dev/null || echo "Aviso: Alguns arquivos não puderam ter o proprietário alterado"
 chmod -R 775 /var/www/html 2>/dev/null || echo "Aviso: Algumas permissões não puderam ser alteradas"
 
