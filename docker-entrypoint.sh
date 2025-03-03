@@ -119,12 +119,40 @@ if grep -q '\${APACHE_DOCUMENT_ROOT}' /etc/apache2/sites-available/000-default.c
     sed -i 's|\${APACHE_DOCUMENT_ROOT}|/var/www/html|g' /etc/apache2/sites-available/000-default.conf || log_warning "Não foi possível corrigir a configuração do Apache"
 fi
 
-# Garantir que o Apache possa ser executado como www-data
-log_info "Ajustando permissões do Apache..."
+# Garantir que o Apache possa ser executado corretamente
+log_info "Ajustando permissões e configurações do Apache..."
+
+# Ajustar permissões dos diretórios do Apache
 chown -R www-data:www-data /var/log/apache2 2>/dev/null || log_warning "Não foi possível ajustar permissões de logs do Apache"
 chown -R www-data:www-data /var/run/apache2 2>/dev/null || log_warning "Não foi possível ajustar permissões de run do Apache"
 
-# Executar o Apache como comando original em vez de tentar iniciá-lo aqui
+# Verificar se o Apache está configurado para usar a porta 80
+if [ -f /etc/apache2/ports.conf ]; then
+    log_info "Verificando configuração de portas do Apache..."
+    # Garantir que o Apache esteja configurado para usar a porta 80
+    if ! grep -q "Listen 80" /etc/apache2/ports.conf; then
+        echo "Listen 80" >> /etc/apache2/ports.conf
+        log_info "Porta 80 adicionada à configuração do Apache"
+    fi
+fi
+
+# Verificar se o usuário www-data tem permissão para usar a porta 80
+# Em ambientes Docker, isso geralmente não é um problema, mas vamos garantir
+if command -v setcap >/dev/null 2>&1; then
+    log_info "Configurando capacidades para o Apache..."
+    setcap 'cap_net_bind_service=+ep' /usr/sbin/apache2 2>/dev/null || log_warning "Não foi possível configurar capacidades para o Apache"
+fi
+
+# Verificar e criar diretórios necessários para o Apache
+for dir in "/var/run/apache2" "/var/lock/apache2"; do
+    if [ ! -d "$dir" ]; then
+        mkdir -p "$dir" 2>/dev/null
+        chown www-data:www-data "$dir" 2>/dev/null
+        chmod 755 "$dir" 2>/dev/null
+        log_info "Diretório criado para o Apache: $dir"
+    fi
+done
+
 log_success "Configuração de persistência concluída"
 log_info "Iniciando Apache como processo principal..."
 
