@@ -7,11 +7,18 @@ log_success() { echo -e "\033[0;32m[OK]\033[0m $1"; }
 log_warning() { echo -e "\033[0;33m[AVISO]\033[0m $1"; }
 log_error() { echo -e "\033[0;31m[ERRO]\033[0m $1"; }
 
+# Definir a variável de ambiente corretamente
+export APACHE_DOCUMENT_ROOT="/var/www/html"
+
+# Garantir que o Apache use esse caminho no VirtualHost
+log_info "Definindo DocumentRoot no Apache..."
+sed -i 's|DocumentRoot ${APACHE_DOCUMENT_ROOT}|DocumentRoot '"$APACHE_DOCUMENT_ROOT"'|' /etc/apache2/sites-enabled/000-default.conf
+log_success "DocumentRoot atualizado para $APACHE_DOCUMENT_ROOT"
+
 # Verificação inicial do EFS
 log_info "Verificando montagem do EFS..."
 if ! df -h | grep -q /var/www/html; then
     log_warning "EFS pode não estar montado em /var/www/html. Verifique a configuração do volume."
-    # Não falhar aqui para permitir execuções locais
 fi
 
 # Criar diretórios essenciais se não existirem
@@ -53,6 +60,11 @@ if [ -f "/etc/apache2/conf-available/mautic-whitelabeler.conf" ]; then
 else
     log_warning "Arquivo de configuração do whitelabeler não encontrado"
 fi
+
+# Reiniciar Apache para garantir que as mudanças foram aplicadas
+log_info "Reiniciando Apache..."
+service apache2 restart
+log_success "Apache reiniciado com sucesso"
 
 log_success "Configuração de persistência concluída"
 log_info "Iniciando processo principal..."
