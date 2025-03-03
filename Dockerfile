@@ -25,9 +25,6 @@ RUN curl -L -o /tmp/mautic-whitelabeler.zip https://github.com/nickian/mautic-wh
 COPY mautic-whitelabeler.conf /etc/apache2/conf-available/
 RUN ln -sf /etc/apache2/conf-available/mautic-whitelabeler.conf /etc/apache2/conf-enabled/mautic-whitelabeler.conf
 
-# Copiar arquivo local.php.dist personalizado
-COPY local.php.dist /var/www/html/app/config/local.php.dist
-
 # Definir variáveis de ambiente para evitar reinstalação
 ENV MAUTIC_SKIP_INSTALL=true
 ENV MAUTIC_INSTALL_SOURCE=TERRAFORM
