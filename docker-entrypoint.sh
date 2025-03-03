@@ -20,6 +20,27 @@ log_info "DocumentRoot atual: $CURRENT_DOCROOT"
 sed -i 's|DocumentRoot [^ ]*|DocumentRoot '"$APACHE_DOCUMENT_ROOT"'|' /etc/apache2/sites-enabled/000-default.conf
 log_success "DocumentRoot atualizado para $APACHE_DOCUMENT_ROOT"
 
+# Verificar e corrigir <Directory> para o DocumentRoot
+if grep -q "<Directory /var/www/html/docroot>" /etc/apache2/sites-enabled/000-default.conf; then
+    log_info "Corrigindo configuração <Directory> no Apache..."
+    sed -i 's|<Directory /var/www/html/docroot>|<Directory '"$APACHE_DOCUMENT_ROOT"'>|' /etc/apache2/sites-enabled/000-default.conf
+    log_success "Configuração <Directory> atualizada para $APACHE_DOCUMENT_ROOT"
+fi
+
+# Verificar e corrigir outras referências a /docroot
+if grep -q "/var/www/html/docroot" /etc/apache2/sites-enabled/000-default.conf; then
+    log_info "Corrigindo outras referências a /docroot no Apache..."
+    sed -i 's|/var/www/html/docroot|'"$APACHE_DOCUMENT_ROOT"'|g' /etc/apache2/sites-enabled/000-default.conf
+    log_success "Todas as referências a /docroot foram atualizadas"
+fi
+
+# Verificar e corrigir no apache2.conf se necessário
+if grep -q "/var/www/html/docroot" /etc/apache2/apache2.conf; then
+    log_info "Corrigindo referências a /docroot no apache2.conf..."
+    sed -i 's|/var/www/html/docroot|'"$APACHE_DOCUMENT_ROOT"'|g' /etc/apache2/apache2.conf
+    log_success "Referências em apache2.conf atualizadas"
+fi
+
 # Verificação inicial do EFS
 log_info "Verificando montagem do EFS..."
 if ! df -h | grep -q /var/www/html; then
