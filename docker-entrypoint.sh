@@ -116,12 +116,6 @@ create_symlink "/mautic/whitelabeler" "/var/www/html/mautic-whitelabeler"
 log_info "Verificando arquivo .installed..."
 touch /mautic/config/.installed 2>/dev/null || log_warning "Não foi possível criar arquivo .installed"
 
-# Ajustar permissões para garantir que o Apache possa acessar os arquivos
-log_info "Ajustando permissões..."
-chown -R www-data:www-data /mautic /var/www/html
-chmod -R 755 /mautic
-chmod -R 755 /var/www/html
-
 # Verificar configuração do Apache para o whitelabeler
 log_info "Verificando configuração do Apache para o whitelabeler..."
 if [ -f "/etc/apache2/conf-available/mautic-whitelabeler.conf" ]; then
