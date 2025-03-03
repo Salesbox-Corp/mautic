@@ -91,18 +91,22 @@ if [ "$ENABLE_WHITELABEL" = "true" ]; then
     echo "Instalando dependências..."
     apt-get update && apt-get install -y git curl npm
     
-    # Clonar o Whitelabeler se não existir
-    if [ ! -d "/var/www/html/mautic-whitelabeler" ]; then
-        echo "Clonando Whitelabeler..."
-        cd /var/www/html
-        git clone https://github.com/nickian/mautic-whitelabeler.git
-        chown -R www-data:www-data mautic-whitelabeler
-        chmod -R 775 mautic-whitelabeler
-    fi
+    # Clonar o Whitelabeler temporariamente e mover os arquivos necessários
+    echo "Configurando Whitelabeler..."
+    TMP_DIR=$(mktemp -d)
+    cd $TMP_DIR
+    git clone https://github.com/nickian/mautic-whitelabeler.git .
+    
+    # Mover arquivos necessários para o diretório raiz do Mautic
+    cp -r * /var/www/html/
+    cd /var/www/html
+    rm -rf $TMP_DIR
+    
+    # Criar diretório de assets se não existir
+    mkdir -p /var/www/html/assets
     
     # Criar config.json para o Whitelabeler
-    mkdir -p /var/www/html/mautic-whitelabeler/assets
-    cat > /var/www/html/mautic-whitelabeler/assets/config.json << EOF
+    cat > /var/www/html/assets/config.json << EOF
 {
     "mautic_path": "/var/www/html",
     "company_name": "${MAUTIC_COMPANY_NAME:-Mautic}",
@@ -119,16 +123,13 @@ EOF
     # Se tiver uma URL de logo customizada, fazer download
     if [ ! -z "$MAUTIC_CUSTOM_LOGO_URL" ]; then
         echo "Baixando logo customizado..."
-        mkdir -p /var/www/html/mautic-whitelabeler/assets/images
-        curl -L "$MAUTIC_CUSTOM_LOGO_URL" -o /var/www/html/mautic-whitelabeler/assets/images/custom_logo.png
-        chmod 644 /var/www/html/mautic-whitelabeler/assets/images/custom_logo.png
+        mkdir -p /var/www/html/assets/images
+        curl -L "$MAUTIC_CUSTOM_LOGO_URL" -o /var/www/html/assets/images/custom_logo.png
+        chmod 644 /var/www/html/assets/images/custom_logo.png
     fi
 
-    # Aplicar Whitelabeling
-    cd /var/www/html
-    
-    # Instalar dependências do Mautic
-    echo "Instalando dependências do Mautic..."
+    # Instalar dependências do Mautic e Whitelabeler
+    echo "Instalando dependências..."
     composer install --no-interaction --no-progress
     npm install
     
@@ -138,8 +139,7 @@ EOF
     
     # Aplicar Whitelabeling
     echo "Aplicando Whitelabeling..."
-    cd /var/www/html
-    sudo -u www-data php mautic-whitelabeler/cli.php --whitelabel
+    sudo -u www-data php cli.php --whitelabel
     
     # Limpar cache
     echo "Limpando cache..."
