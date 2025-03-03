@@ -104,56 +104,30 @@ create_symlink "/mautic/logs" "/var/www/html/app/logs"
 log_info "Verificando arquivo .installed..."
 touch /mautic/config/.installed 2>/dev/null || log_warning "Não foi possível criar arquivo .installed"
 
-# Ajustar permissões
-log_info "Ajustando permissões..."
-chown -R www-data:www-data /mautic 2>/dev/null || log_warning "Erro ao ajustar proprietário"
-chmod -R 775 /mautic 2>/dev/null || log_warning "Erro ao ajustar permissões"
+# Ajustar permissões com máximos privilégios
+log_info "Ajustando permissões com privilégios máximos..."
+chmod -R 777 /mautic 2>/dev/null || log_warning "Erro ao ajustar permissões do EFS"
+chmod -R 777 /var/www/html 2>/dev/null || log_warning "Erro ao ajustar permissões do diretório web"
 
-# Verificar e corrigir configuração do Apache
-log_info "Verificando configuração do Apache..."
+# Garantir que o Apache tenha acesso total aos diretórios necessários
+log_info "Configurando permissões para o Apache..."
 
-# Verificar se a variável APACHE_DOCUMENT_ROOT está definida
-if grep -q '\${APACHE_DOCUMENT_ROOT}' /etc/apache2/sites-available/000-default.conf; then
-    log_info "Corrigindo configuração do Apache..."
-    # Substituir a variável não definida pelo caminho correto
-    sed -i 's|\${APACHE_DOCUMENT_ROOT}|/var/www/html|g' /etc/apache2/sites-available/000-default.conf || log_warning "Não foi possível corrigir a configuração do Apache"
-fi
-
-# Garantir que o Apache possa ser executado corretamente
-log_info "Ajustando permissões e configurações do Apache..."
-
-# Ajustar permissões dos diretórios do Apache
-chown -R www-data:www-data /var/log/apache2 2>/dev/null || log_warning "Não foi possível ajustar permissões de logs do Apache"
-chown -R www-data:www-data /var/run/apache2 2>/dev/null || log_warning "Não foi possível ajustar permissões de run do Apache"
-
-# Verificar se o Apache está configurado para usar a porta 80
-if [ -f /etc/apache2/ports.conf ]; then
-    log_info "Verificando configuração de portas do Apache..."
-    # Garantir que o Apache esteja configurado para usar a porta 80
-    if ! grep -q "Listen 80" /etc/apache2/ports.conf; then
-        echo "Listen 80" >> /etc/apache2/ports.conf
-        log_info "Porta 80 adicionada à configuração do Apache"
-    fi
-fi
-
-# Verificar se o usuário www-data tem permissão para usar a porta 80
-# Em ambientes Docker, isso geralmente não é um problema, mas vamos garantir
-if command -v setcap >/dev/null 2>&1; then
-    log_info "Configurando capacidades para o Apache..."
-    setcap 'cap_net_bind_service=+ep' /usr/sbin/apache2 2>/dev/null || log_warning "Não foi possível configurar capacidades para o Apache"
-fi
-
-# Verificar e criar diretórios necessários para o Apache
-for dir in "/var/run/apache2" "/var/lock/apache2"; do
-    if [ ! -d "$dir" ]; then
+# Diretórios críticos para o Apache
+for dir in "/var/log/apache2" "/var/run/apache2" "/var/lock/apache2" "/etc/apache2"; do
+    if [ -d "$dir" ]; then
+        chmod -R 777 "$dir" 2>/dev/null || log_warning "Não foi possível ajustar permissões para: $dir"
+    else
         mkdir -p "$dir" 2>/dev/null
-        chown www-data:www-data "$dir" 2>/dev/null
-        chmod 755 "$dir" 2>/dev/null
-        log_info "Diretório criado para o Apache: $dir"
+        chmod -R 777 "$dir" 2>/dev/null || log_warning "Não foi possível criar/ajustar permissões para: $dir"
     fi
 done
 
-log_success "Configuração de persistência concluída"
+# Verificar se estamos rodando como root (necessário para usar a porta 80)
+if [ "$(id -u)" != "0" ]; then
+    log_warning "Não estamos rodando como root, o que pode causar problemas com a porta 80"
+fi
+
+log_success "Configuração de persistência concluída com permissões máximas"
 log_info "Iniciando Apache como processo principal..."
 
 # Executar comando original (que deve ser apache2-foreground)
