@@ -13,20 +13,24 @@ RUN apt-get update && apt-get install -y \
 WORKDIR /var/www/html
 
 # Criar diretórios básicos
-RUN mkdir -p /var/www/html/app/cache /var/www/html/app/logs \
-    && chown -R www-data:www-data /var/www/html \
-    && chmod -R 775 /var/www/html
+RUN mkdir -p /var/www/html/app/cache /var/www/html/app/logs
 
 # Instalar mautic-whitelabeler usando curl em vez de git
 RUN curl -L -o /tmp/mautic-whitelabeler.zip https://github.com/nickian/mautic-whitelabeler/archive/refs/heads/master.zip \
     && unzip /tmp/mautic-whitelabeler.zip -d /tmp \
     && mv /tmp/mautic-whitelabeler-master /var/www/html/mautic-whitelabeler \
-    && rm /tmp/mautic-whitelabeler.zip \
-    && chown -R www-data:www-data /var/www/html/mautic-whitelabeler
+    && rm /tmp/mautic-whitelabeler.zip
 
 # Copiar configuração do mautic-whitelabeler
 COPY mautic-whitelabeler.conf /etc/apache2/conf-available/
 RUN ln -sf /etc/apache2/conf-available/mautic-whitelabeler.conf /etc/apache2/conf-enabled/mautic-whitelabeler.conf
+
+# Copiar arquivo local.php.dist personalizado
+COPY local.php.dist /var/www/html/app/config/local.php.dist
+
+# Definir variáveis de ambiente para evitar reinstalação
+ENV MAUTIC_SKIP_INSTALL=true
+ENV MAUTIC_INSTALL_SOURCE=TERRAFORM
 
 # Copiar script de inicialização
 COPY docker-entrypoint.sh /usr/local/bin/
