@@ -83,5 +83,70 @@ EOF
     chmod 664 /mautic/config/local.php 2>/dev/null || echo "Aviso: Não foi possível alterar permissões do local.php"
 fi
 
+# Configurar Whitelabeler se necessário
+if [ "$ENABLE_WHITELABEL" = "true" ]; then
+    echo "=== Configurando Whitelabeler ==="
+    
+    # Instalar dependências necessárias
+    echo "Instalando dependências..."
+    apt-get update && apt-get install -y git curl npm
+    
+    # Clonar o Whitelabeler se não existir
+    if [ ! -d "/var/www/html/mautic-whitelabeler" ]; then
+        echo "Clonando Whitelabeler..."
+        cd /var/www/html
+        git clone https://github.com/nickian/mautic-whitelabeler.git
+        chown -R www-data:www-data mautic-whitelabeler
+        chmod -R 775 mautic-whitelabeler
+    fi
+    
+    # Criar config.json para o Whitelabeler
+    mkdir -p /var/www/html/mautic-whitelabeler/assets
+    cat > /var/www/html/mautic-whitelabeler/assets/config.json << EOF
+{
+    "mautic_path": "/var/www/html",
+    "company_name": "${MAUTIC_COMPANY_NAME:-Mautic}",
+    "primary_color": "${MAUTIC_PRIMARY_COLOR:-#4e5e9e}",
+    "secondary_color": "${MAUTIC_SECONDARY_COLOR:-#4e5e9e}",
+    "link_color": "${MAUTIC_PRIMARY_COLOR:-#4e5e9e}",
+    "login_logo_width": "300",
+    "login_logo_margin": "50",
+    "sidebar_logo_width": "200",
+    "sidebar_logo_margin": "25"
+}
+EOF
+
+    # Se tiver uma URL de logo customizada, fazer download
+    if [ ! -z "$MAUTIC_CUSTOM_LOGO_URL" ]; then
+        echo "Baixando logo customizado..."
+        mkdir -p /var/www/html/mautic-whitelabeler/assets/images
+        curl -L "$MAUTIC_CUSTOM_LOGO_URL" -o /var/www/html/mautic-whitelabeler/assets/images/custom_logo.png
+        chmod 644 /var/www/html/mautic-whitelabeler/assets/images/custom_logo.png
+    fi
+
+    # Aplicar Whitelabeling
+    cd /var/www/html
+    
+    # Instalar dependências do Mautic
+    echo "Instalando dependências do Mautic..."
+    composer install --no-interaction --no-progress
+    npm install
+    
+    # Gerar assets do Mautic
+    echo "Gerando assets..."
+    php bin/console mautic:assets:generate
+    
+    # Aplicar Whitelabeling
+    echo "Aplicando Whitelabeling..."
+    cd /var/www/html
+    sudo -u www-data php mautic-whitelabeler/cli.php --whitelabel
+    
+    # Limpar cache
+    echo "Limpando cache..."
+    php bin/console cache:clear
+    
+    echo "Processo de Whitelabeling concluído"
+fi
+
 # Executar o comando original
 exec "$@" 
