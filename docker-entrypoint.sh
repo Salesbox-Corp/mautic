@@ -27,6 +27,19 @@ done
 log_info "Verificando arquivo .installed..."
 touch /var/www/html/app/config/.installed 2>/dev/null || log_warning "Não foi possível criar arquivo .installed"
 
+# Ajustar permissões apenas para o whitelabeler
+log_info "Ajustando permissões para o whitelabeler..."
+if [ -d "/var/www/html/mautic-whitelabeler" ]; then
+    # Garantir que o diretório assets exista
+    mkdir -p /var/www/html/mautic-whitelabeler/assets 2>/dev/null
+    
+    # Ajustar permissões apenas para o diretório do whitelabeler
+    chmod -R 777 /var/www/html/mautic-whitelabeler 2>/dev/null || log_warning "Não foi possível ajustar permissões do whitelabeler"
+    log_success "Permissões do whitelabeler ajustadas"
+else
+    log_warning "Diretório do whitelabeler não encontrado"
+fi
+
 # Verificar configuração do Apache para o whitelabeler
 log_info "Verificando configuração do Apache para o whitelabeler..."
 if [ -f "/etc/apache2/conf-available/mautic-whitelabeler.conf" ]; then
