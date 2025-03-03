@@ -41,9 +41,9 @@ else
     echo "✅ Mautic já está salvo no EFS. Pulando cópia."
 fi
 
-# **Verificar se os diretórios já são volumes montados e pular remoção**
+# **Evitar remoção de diretórios que já são volumes montados no EFS**
 echo "🔍 Verificando volumes para evitar conflitos..."
-for dir in "/var/www/html/var/logs" "/var/www/html/config" "/var/www/html/docroot/media" "/var/www/html/app/cache" "/var/www/html/app/logs"; do
+for dir in "/var/www/html/app/logs" "/var/www/html/app/cache"; do
     if mount | grep -q "$dir"; then
         echo "⚠️ $dir já é um volume montado. Pulando remoção."
     else
