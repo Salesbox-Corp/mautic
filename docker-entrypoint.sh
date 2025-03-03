@@ -47,15 +47,16 @@ for dir in "/var/www/html/app/logs" "/var/www/html/app/cache"; do
     if mount | grep -q "$dir"; then
         echo "⚠️ $dir já é um volume montado. Pulando remoção."
     else
-        echo "🗑️ Tentando remover $dir para recriação do symlink..."
+        echo "🗑️ Tentando limpar $dir para recriação do symlink..."
         rm -rf "$dir" 2>/dev/null || echo "⚠️ Falha ao remover $dir, ignorando."
     fi
 done
 
 # **Corrigir permissões de diretórios antes de criar os symlinks**
 echo "🔧 Ajustando permissões antes de criar symlinks..."
-chown -R www-data:www-data /mautic/*
-chmod -R 775 /mautic/*
+find /mautic -type d -exec chmod 775 {} +
+find /mautic -type f -exec chmod 664 {} +
+chown -R www-data:www-data /mautic
 
 # **Criar symlink de /var/www/html para o EFS se ainda não existir**
 if [ ! -L "/var/www/html" ] && [ ! -d "/var/www/html" ]; then
@@ -65,12 +66,7 @@ fi
 
 # Criar diretórios essenciais no EFS, se não existirem
 echo "📂 Criando diretórios persistentes no EFS..."
-mkdir -p /mautic/media/images
-mkdir -p /mautic/config
-mkdir -p /mautic/cache
-mkdir -p /mautic/logs
-mkdir -p /mautic/plugins
-mkdir -p /mautic/translations
+mkdir -p /mautic/media/images /mautic/config /mautic/cache /mautic/logs /mautic/plugins /mautic/translations
 
 # Criar symlinks para persistência de diretórios internos
 echo "🔗 Criando symlinks para diretórios essenciais..."
