@@ -9,7 +9,7 @@ echo "Verificando diretório Mautic..."
 ls -la /var/www/html || echo "⚠️ Diretório Mautic não encontrado!"
 echo "==========================="
 
-# **Parar o Apache temporariamente para evitar arquivos bloqueados**
+# **Parar o Apache temporariamente para evitar locks**
 echo "⏳ Parando Apache temporariamente para evitar locks..."
 service apache2 stop || echo "⚠️ Apache não estava rodando."
 
@@ -47,15 +47,19 @@ for dir in "/var/www/html/var/logs" "/var/www/html/config" "/var/www/html/docroo
     if mount | grep -q "$dir"; then
         echo "⚠️ $dir já é um volume montado. Pulando remoção."
     else
-        echo "🗑️ Removendo $dir para recriação do symlink..."
-        rm -rf "$dir" || echo "⚠️ Falha ao remover $dir, ignorando."
+        echo "🗑️ Tentando remover $dir para recriação do symlink..."
+        rm -rf "$dir" 2>/dev/null || echo "⚠️ Falha ao remover $dir, ignorando."
     fi
 done
 
-# Criar symlink de /var/www/html para o EFS se não existir
-if [ ! -L "/var/www/html" ]; then
+# **Corrigir permissões de diretórios antes de criar os symlinks**
+echo "🔧 Ajustando permissões antes de criar symlinks..."
+chown -R www-data:www-data /mautic/*
+chmod -R 775 /mautic/*
+
+# **Criar symlink de /var/www/html para o EFS se ainda não existir**
+if [ ! -L "/var/www/html" ] && [ ! -d "/var/www/html" ]; then
     echo "🔗 Criando symlink de /var/www/html para o EFS..."
-    rm -rf /var/www/html
     ln -s /mautic/html /var/www/html
 fi
 
@@ -76,11 +80,6 @@ echo "🔗 Criando symlinks para diretórios essenciais..."
 [ -L "/var/www/html/app/logs" ] || ln -sf /mautic/logs /var/www/html/app/logs
 [ -L "/var/www/html/plugins" ] || ln -sf /mautic/plugins /var/www/html/plugins
 [ -L "/var/www/html/translations" ] || ln -sf /mautic/translations /var/www/html/translations
-
-# Garantir permissões corretas
-echo "🔧 Corrigindo permissões..."
-chown -R www-data:www-data /mautic/*
-chmod -R 775 /mautic/*
 
 # Garantir que o arquivo .installed existe para evitar reinstalação
 echo "🛠️ Verificando arquivo .installed..."
