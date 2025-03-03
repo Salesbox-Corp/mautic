@@ -32,7 +32,14 @@ fi
 
 # Criar diretórios essenciais no EFS, se não existirem
 echo "📂 Criando diretórios persistentes no EFS..."
-mkdir -p /mautic/media/images /mautic/config /mautic/cache /mautic/logs /mautic/plugins /mautic/translations
+for dir in media config cache logs plugins translations; do
+    if [ ! -d "/mautic/$dir" ]; then
+        echo "📁 Criando /mautic/$dir..."
+        mkdir -p "/mautic/$dir"
+    else
+        echo "✅ Diretório /mautic/$dir já existe."
+    fi
+done
 
 # **Evitar loops de symlinks**
 echo "🔗 Verificando e criando symlinks para persistência..."
