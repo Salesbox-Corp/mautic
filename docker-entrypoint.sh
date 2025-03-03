@@ -14,15 +14,6 @@ if ! df -h | grep -q /var/www/html; then
     # Não falhar aqui para permitir execuções locais
 fi
 
-# Verificar se o diretório do Mautic já contém arquivos
-if [ -z "$(ls -A /var/www/html)" ]; then
-    log_info "O diretório do Mautic está vazio! Copiando arquivos padrões..."
-    cp -R /usr/src/mautic/* /var/www/html/
-    log_success "Arquivos padrão copiados para o EFS."
-else
-    log_success "Arquivos do Mautic detectados, mantendo existentes."
-fi
-
 # Criar diretórios essenciais se não existirem
 log_info "Verificando diretórios essenciais..."
 for dir in "/var/www/html/media" "/var/www/html/config" "/var/www/html/var/cache" "/var/www/html/var/logs" "/var/www/html/mautic-whitelabeler"; do
