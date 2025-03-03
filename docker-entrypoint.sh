@@ -14,42 +14,54 @@ echo "Aguardando montagem do EFS..."
 timeout 30 sh -c 'while ! stat /mautic 2>/dev/null; do sleep 1; done' || \
 { echo "ERRO: EFS não montado após 30 segundos"; exit 1; }
 
-# Criar diretórios de persistência no EFS, se não existirem
-echo "Verificando diretórios no EFS..."
+# Se o Mautic ainda não foi copiado para o EFS, fazer a cópia inicial
+if [ ! -d "/mautic/html" ]; then
+    echo "Copiando Mautic para o EFS pela primeira vez..."
+    mkdir -p /mautic/html
+    cp -R /var/www/html/* /mautic/html/
+    chown -R www-data:www-data /mautic/html
+    chmod -R 775 /mautic/html
+fi
+
+# Remover diretório padrão do Mautic e criar um symlink para o EFS
+if [ ! -L "/var/www/html" ]; then
+    echo "Criando symlink de /var/www/html para o EFS..."
+    rm -rf /var/www/html
+    ln -s /mautic/html /var/www/html
+fi
+
+# Criar diretórios essenciais no EFS, se não existirem
+echo "Verificando e criando diretórios persistentes no EFS..."
 mkdir -p /mautic/media/images
 mkdir -p /mautic/config
 mkdir -p /mautic/cache
 mkdir -p /mautic/logs
-mkdir -p /mautic/app
 mkdir -p /mautic/plugins
 mkdir -p /mautic/translations
 
-# Configurar symlinks para persistência apenas se não existirem
-echo "Configurando symlinks..."
+# Criar symlinks para persistência de diretórios internos
+echo "Criando symlinks para diretórios essenciais..."
 [ -L "/var/www/html/media" ] || ln -sf /mautic/media /var/www/html/media
 [ -L "/var/www/html/app/config" ] || ln -sf /mautic/config /var/www/html/app/config
 [ -L "/var/www/html/app/cache" ] || ln -sf /mautic/cache /var/www/html/app/cache
 [ -L "/var/www/html/app/logs" ] || ln -sf /mautic/logs /var/www/html/app/logs
-[ -L "/var/www/html/app" ] || ln -sf /mautic/app /var/www/html/app
 [ -L "/var/www/html/plugins" ] || ln -sf /mautic/plugins /var/www/html/plugins
 [ -L "/var/www/html/translations" ] || ln -sf /mautic/translations /var/www/html/translations
 
-# Configurar permissões corretamente
-echo "Configurando permissões..."
-chown -R www-data:www-data /mautic/* || echo "Aviso: Alguns arquivos em /mautic não puderam ter o proprietário alterado"
-chmod -R 775 /mautic/* || echo "Aviso: Algumas permissões em /mautic não puderam ser alteradas"
+# Garantir permissões corretas para o usuário do Apache
+echo "Corrigindo permissões..."
+chown -R www-data:www-data /mautic/*
+chmod -R 775 /mautic/*
 
-# Garantir que o arquivo .installed existe para evitar reinicialização do Mautic
+# Garantir que o arquivo .installed existe para evitar reinstalação
 echo "Verificando arquivo .installed..."
 touch /mautic/config/.installed
 chown www-data:www-data /mautic/config/.installed
 chmod 664 /mautic/config/.installed
 
-echo "Diretórios configurados e prontos."
-
 # Garantir que o local.php seja carregado corretamente do EFS
 if [ ! -f "/mautic/config/local.php" ]; then
-    echo "Arquivo de configuração local.php não encontrado no EFS. Criando..."
+    echo "Arquivo local.php não encontrado no EFS. Criando..."
     if [ -f "/var/www/html/app/config/local.php.dist" ]; then
         cp /var/www/html/app/config/local.php.dist /mautic/config/local.php
     else
@@ -83,11 +95,11 @@ ln -sf /mautic/config/local.php /var/www/html/app/config/local.php
 if [ "$ENABLE_WHITELABEL" = "true" ]; then
     echo "=== Configurando Whitelabeler ==="
 
-    # Instalar dependências necessárias
+    # Instalar dependências
     echo "Instalando dependências..."
     apt-get update && apt-get install -y git curl npm
 
-    # Clonar o Whitelabeler se ainda não estiver no EFS
+    # Clonar o Whitelabeler no EFS se ainda não existir
     if [ ! -d "/mautic/mautic-whitelabeler" ]; then
         echo "Clonando Whitelabeler para o EFS..."
         git clone https://github.com/nickian/mautic-whitelabeler.git /mautic/mautic-whitelabeler
@@ -114,7 +126,7 @@ if [ "$ENABLE_WHITELABEL" = "true" ]; then
 }
 EOF
 
-    # Se tiver uma URL de logo customizada, fazer download
+    # Baixar logo customizado, se necessário
     if [ ! -z "$MAUTIC_CUSTOM_LOGO_URL" ]; then
         echo "Baixando logo customizado..."
         mkdir -p /var/www/html/assets/images
