@@ -7,16 +7,25 @@ log_success() { echo -e "\033[0;32m[OK]\033[0m $1"; }
 log_warning() { echo -e "\033[0;33m[AVISO]\033[0m $1"; }
 log_error() { echo -e "\033[0;31m[ERRO]\033[0m $1"; }
 
-# Verificação inicial
+# Verificação inicial do EFS
 log_info "Verificando montagem do EFS..."
 if ! df -h | grep -q /var/www/html; then
     log_warning "EFS pode não estar montado em /var/www/html. Verifique a configuração do volume."
-    # Não vamos falhar aqui, pois pode ser uma execução local sem EFS
+    # Não falhar aqui para permitir execuções locais
+fi
+
+# Verificar se o diretório do Mautic já contém arquivos
+if [ -z "$(ls -A /var/www/html)" ]; then
+    log_info "O diretório do Mautic está vazio! Copiando arquivos padrões..."
+    cp -R /usr/src/mautic/* /var/www/html/
+    log_success "Arquivos padrão copiados para o EFS."
+else
+    log_success "Arquivos do Mautic detectados, mantendo existentes."
 fi
 
 # Criar diretórios essenciais se não existirem
 log_info "Verificando diretórios essenciais..."
-for dir in "/var/www/html/media" "/var/www/html/app/config" "/var/www/html/app/cache" "/var/www/html/app/logs" "/var/www/html/mautic-whitelabeler"; do
+for dir in "/var/www/html/media" "/var/www/html/config" "/var/www/html/var/cache" "/var/www/html/var/logs" "/var/www/html/mautic-whitelabeler"; do
     if [ ! -d "$dir" ]; then
         log_info "Criando diretório: $dir"
         mkdir -p "$dir" 2>/dev/null || log_warning "Não foi possível criar diretório: $dir"
@@ -24,16 +33,17 @@ for dir in "/var/www/html/media" "/var/www/html/app/config" "/var/www/html/app/c
 done
 
 # Garantir arquivo .installed
-log_info "Verificando arquivo .installed..."
-touch /var/www/html/app/config/.installed 2>/dev/null || log_warning "Não foi possível criar arquivo .installed"
+if [ ! -f "/var/www/html/config/.installed" ]; then
+    log_info "Criando arquivo .installed..."
+    touch /var/www/html/config/.installed 2>/dev/null || log_warning "Não foi possível criar arquivo .installed"
+else
+    log_success "Arquivo .installed já existe, pulando etapa."
+fi
 
 # Ajustar permissões apenas para o whitelabeler
 log_info "Ajustando permissões para o whitelabeler..."
 if [ -d "/var/www/html/mautic-whitelabeler" ]; then
-    # Garantir que o diretório assets exista
     mkdir -p /var/www/html/mautic-whitelabeler/assets 2>/dev/null
-    
-    # Ajustar permissões apenas para o diretório do whitelabeler
     chmod -R 777 /var/www/html/mautic-whitelabeler 2>/dev/null || log_warning "Não foi possível ajustar permissões do whitelabeler"
     log_success "Permissões do whitelabeler ajustadas"
 else
