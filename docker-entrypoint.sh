@@ -35,7 +35,7 @@ done
 
 # Criar diretórios no EFS com tratamento de erro
 log_info "Criando diretórios no EFS..."
-for dir in "media" "config" "cache" "logs"; do
+for dir in "media" "config" "cache" "logs" "whitelabeler"; do
     if ! mkdir -p "/mautic/$dir" 2>/dev/null; then
         log_warning "Não foi possível criar diretório: /mautic/$dir"
         
@@ -66,6 +66,17 @@ fi
 if [ -d "/var/www/html/app/config" ] && [ ! -L "/var/www/html/app/config" ] && [ "$(ls -A /var/www/html/app/config 2>/dev/null)" ]; then
     log_info "Copiando arquivos de configuração..."
     cp -a /var/www/html/app/config/* /mautic/config/ 2>/dev/null || log_warning "Erro ao copiar arquivos de configuração"
+fi
+
+# Whitelabeler
+if [ -d "/var/www/html/mautic-whitelabeler" ] && [ ! -L "/var/www/html/mautic-whitelabeler" ]; then
+    log_info "Configurando mautic-whitelabeler..."
+    # Se o diretório whitelabeler no EFS estiver vazio, copiar os arquivos
+    if [ ! "$(ls -A /mautic/whitelabeler 2>/dev/null)" ]; then
+        cp -a /var/www/html/mautic-whitelabeler/* /mautic/whitelabeler/ 2>/dev/null || log_warning "Erro ao copiar arquivos do whitelabeler"
+    fi
+    # Remover o diretório original para criar o link simbólico
+    rm -rf /var/www/html/mautic-whitelabeler 2>/dev/null || log_warning "Erro ao remover diretório do whitelabeler"
 fi
 
 # Criar links simbólicos
@@ -99,10 +110,30 @@ create_symlink "/mautic/media" "/var/www/html/media"
 create_symlink "/mautic/config" "/var/www/html/app/config"
 create_symlink "/mautic/cache" "/var/www/html/app/cache"
 create_symlink "/mautic/logs" "/var/www/html/app/logs"
+create_symlink "/mautic/whitelabeler" "/var/www/html/mautic-whitelabeler"
 
 # Garantir arquivo .installed
 log_info "Verificando arquivo .installed..."
 touch /mautic/config/.installed 2>/dev/null || log_warning "Não foi possível criar arquivo .installed"
+
+# Ajustar permissões para garantir que o Apache possa acessar os arquivos
+log_info "Ajustando permissões..."
+chown -R www-data:www-data /mautic /var/www/html
+chmod -R 755 /mautic
+chmod -R 755 /var/www/html
+
+# Verificar configuração do Apache para o whitelabeler
+log_info "Verificando configuração do Apache para o whitelabeler..."
+if [ -f "/etc/apache2/conf-available/mautic-whitelabeler.conf" ]; then
+    if ! [ -f "/etc/apache2/conf-enabled/mautic-whitelabeler.conf" ]; then
+        ln -sf /etc/apache2/conf-available/mautic-whitelabeler.conf /etc/apache2/conf-enabled/mautic-whitelabeler.conf
+        log_success "Configuração do whitelabeler ativada"
+    else
+        log_success "Configuração do whitelabeler já está ativada"
+    fi
+else
+    log_warning "Arquivo de configuração do whitelabeler não encontrado"
+fi
 
 log_success "Configuração de persistência concluída"
 log_info "Iniciando processo principal..."

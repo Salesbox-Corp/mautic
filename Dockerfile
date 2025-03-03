@@ -16,6 +16,14 @@ RUN mkdir -p /var/www/html/app/cache /var/www/html/app/logs \
     && chown -R www-data:www-data /var/www/html \
     && chmod -R 775 /var/www/html
 
+# Instalar mautic-whitelabeler
+RUN git clone https://github.com/nickallbutt/mautic-whitelabeler.git /var/www/html/mautic-whitelabeler \
+    && chown -R www-data:www-data /var/www/html/mautic-whitelabeler
+
+# Copiar configuração do mautic-whitelabeler
+COPY mautic-whitelabeler.conf /etc/apache2/conf-available/
+RUN ln -sf /etc/apache2/conf-available/mautic-whitelabeler.conf /etc/apache2/conf-enabled/mautic-whitelabeler.conf
+
 # Copiar script de inicialização
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
