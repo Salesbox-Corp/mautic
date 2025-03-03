@@ -12,7 +12,12 @@ export APACHE_DOCUMENT_ROOT="/var/www/html"
 
 # Garantir que o Apache use esse caminho no VirtualHost
 log_info "Definindo DocumentRoot no Apache..."
-sed -i 's|DocumentRoot ${APACHE_DOCUMENT_ROOT}|DocumentRoot '"$APACHE_DOCUMENT_ROOT"'|' /etc/apache2/sites-enabled/000-default.conf
+# Primeiro, verifique qual é o DocumentRoot atual
+CURRENT_DOCROOT=$(grep -o 'DocumentRoot [^ ]*' /etc/apache2/sites-enabled/000-default.conf | awk '{print $2}')
+log_info "DocumentRoot atual: $CURRENT_DOCROOT"
+
+# Substitua qualquer DocumentRoot pelo valor correto
+sed -i 's|DocumentRoot [^ ]*|DocumentRoot '"$APACHE_DOCUMENT_ROOT"'|' /etc/apache2/sites-enabled/000-default.conf
 log_success "DocumentRoot atualizado para $APACHE_DOCUMENT_ROOT"
 
 # Verificação inicial do EFS
