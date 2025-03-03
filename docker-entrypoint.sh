@@ -1,13 +1,17 @@
 #!/bin/bash
 set -e
 
-# Debug básico
+# Debug inicial
 echo "=== Informações de Debug ==="
 echo "Verificando montagem do EFS..."
 df -h | grep /mautic && echo "✅ EFS está montado." || echo "⚠️ EFS NÃO ESTÁ MONTADO!"
 echo "Verificando diretório Mautic..."
 ls -la /var/www/html || echo "⚠️ Diretório Mautic não encontrado!"
 echo "==========================="
+
+# **Parar o Apache temporariamente para evitar arquivos bloqueados**
+echo "⏳ Parando Apache temporariamente para evitar locks..."
+service apache2 stop || echo "⚠️ Apache não estava rodando."
 
 # Aguardar montagem do EFS (máximo 30 segundos)
 echo "Aguardando montagem do EFS..."
@@ -20,11 +24,9 @@ for i in {1..30}; do
     sleep 1
 done
 
-# Se ainda não estiver montado, forçar saída com erro
+# Se ainda não estiver montado, sair com erro
 if ! df -h | grep -q /mautic; then
     echo "❌ ERRO: O EFS não foi montado corretamente!"
-    echo "⏳ Testando conexão com o EFS..."
-    telnet $(nslookup $EFS_DNS | awk '/Address: / {print $2; exit}') 2049 || echo "⚠️ Sem conexão com o EFS na porta 2049!"
     exit 1
 fi
 
@@ -39,7 +41,18 @@ else
     echo "✅ Mautic já está salvo no EFS. Pulando cópia."
 fi
 
-# Remover diretório padrão do Mautic e criar um symlink para o EFS
+# **Verificar se os diretórios já são volumes montados e pular remoção**
+echo "🔍 Verificando volumes para evitar conflitos..."
+for dir in "/var/www/html/var/logs" "/var/www/html/config" "/var/www/html/docroot/media" "/var/www/html/app/cache" "/var/www/html/app/logs"; do
+    if mount | grep -q "$dir"; then
+        echo "⚠️ $dir já é um volume montado. Pulando remoção."
+    else
+        echo "🗑️ Removendo $dir para recriação do symlink..."
+        rm -rf "$dir" || echo "⚠️ Falha ao remover $dir, ignorando."
+    fi
+done
+
+# Criar symlink de /var/www/html para o EFS se não existir
 if [ ! -L "/var/www/html" ]; then
     echo "🔗 Criando symlink de /var/www/html para o EFS..."
     rm -rf /var/www/html
@@ -64,7 +77,7 @@ echo "🔗 Criando symlinks para diretórios essenciais..."
 [ -L "/var/www/html/plugins" ] || ln -sf /mautic/plugins /var/www/html/plugins
 [ -L "/var/www/html/translations" ] || ln -sf /mautic/translations /var/www/html/translations
 
-# Garantir permissões corretas para o usuário do Apache
+# Garantir permissões corretas
 echo "🔧 Corrigindo permissões..."
 chown -R www-data:www-data /mautic/*
 chmod -R 775 /mautic/*
@@ -107,7 +120,8 @@ fi
 # Garantir que o Mautic esteja apontando para o local.php correto
 ln -sf /mautic/config/local.php /var/www/html/app/config/local.php
 
-echo "✅ Configuração concluída. Iniciando o Mautic..."
+echo "✅ Configuração concluída. Reiniciando Apache..."
+service apache2 start
 
 # Executar o comando original do container
 exec "$@"
