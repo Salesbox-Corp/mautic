@@ -4,64 +4,57 @@ set -e
 # Debug básico
 echo "=== Informações de Debug ==="
 echo "Verificando montagem do EFS..."
-df -h | grep html || echo "EFS não está montado"
+df -h | grep /mautic || echo "EFS não está montado"
 echo "Verificando diretório Mautic..."
 ls -la /var/www/html || echo "Diretório Mautic não encontrado"
 echo "==========================="
 
 # Aguardar montagem do EFS (máximo 30 segundos)
 echo "Aguardando montagem do EFS..."
-counter=0
-while [ ! -d "/var/www/html" ] && [ $counter -lt 30 ]; do
-    sleep 1
-    counter=$((counter+1))
-    echo "Tentativa $counter de 30..."
-done
+timeout 30 sh -c 'while ! stat /mautic 2>/dev/null; do sleep 1; done' || \
+{ echo "ERRO: EFS não montado após 30 segundos"; exit 1; }
 
-if [ ! -d "/var/www/html" ]; then
-    echo "ERRO: EFS não montado após 30 segundos"
-    exit 1
-fi
-
-# Verificar e criar diretórios necessários
-echo "Configurando diretórios..."
-
-# Verificar se os diretórios de persistência existem no EFS
+# Criar diretórios de persistência no EFS, se não existirem
 echo "Verificando diretórios no EFS..."
-mkdir -p /mautic/media/images 2>/dev/null || echo "Diretório media/images já existe"
-mkdir -p /mautic/config 2>/dev/null || echo "Diretório config já existe"
-mkdir -p /mautic/cache 2>/dev/null || echo "Diretório cache já existe"
-mkdir -p /mautic/logs 2>/dev/null || echo "Diretório logs já existe"
+mkdir -p /mautic/media/images
+mkdir -p /mautic/config
+mkdir -p /mautic/cache
+mkdir -p /mautic/logs
+mkdir -p /mautic/app
+mkdir -p /mautic/plugins
+mkdir -p /mautic/translations
 
-# Configurar symlinks para persistência
+# Configurar symlinks para persistência apenas se não existirem
 echo "Configurando symlinks..."
-# Media já está configurado como symlink pelo container
 [ -L "/var/www/html/media" ] || ln -sf /mautic/media /var/www/html/media
 [ -L "/var/www/html/app/config" ] || ln -sf /mautic/config /var/www/html/app/config
 [ -L "/var/www/html/app/cache" ] || ln -sf /mautic/cache /var/www/html/app/cache
 [ -L "/var/www/html/app/logs" ] || ln -sf /mautic/logs /var/www/html/app/logs
+[ -L "/var/www/html/app" ] || ln -sf /mautic/app /var/www/html/app
+[ -L "/var/www/html/plugins" ] || ln -sf /mautic/plugins /var/www/html/plugins
+[ -L "/var/www/html/translations" ] || ln -sf /mautic/translations /var/www/html/translations
 
-# Configurar permissões
+# Configurar permissões corretamente
 echo "Configurando permissões..."
-chown -R www-data:www-data /mautic/* 2>/dev/null || echo "Aviso: Alguns arquivos em /mautic não puderam ter o proprietário alterado"
-chmod -R 775 /mautic/* 2>/dev/null || echo "Aviso: Algumas permissões em /mautic não puderam ser alteradas"
+chown -R www-data:www-data /mautic/* || echo "Aviso: Alguns arquivos em /mautic não puderam ter o proprietário alterado"
+chmod -R 775 /mautic/* || echo "Aviso: Algumas permissões em /mautic não puderam ser alteradas"
 
-# Garantir que o arquivo .installed existe
+# Garantir que o arquivo .installed existe para evitar reinicialização do Mautic
 echo "Verificando arquivo .installed..."
-touch /mautic/config/.installed 2>/dev/null || echo "Aviso: Não foi possível criar/atualizar .installed"
-chown www-data:www-data /mautic/config/.installed 2>/dev/null || echo "Aviso: Não foi possível alterar proprietário do .installed"
-chmod 664 /mautic/config/.installed 2>/dev/null || echo "Aviso: Não foi possível alterar permissões do .installed"
+touch /mautic/config/.installed
+chown www-data:www-data /mautic/config/.installed
+chmod 664 /mautic/config/.installed
 
-echo "Diretórios configurados"
+echo "Diretórios configurados e prontos."
 
-# Verificar e copiar arquivos de configuração se necessário
+# Garantir que o local.php seja carregado corretamente do EFS
 if [ ! -f "/mautic/config/local.php" ]; then
-    echo "Criando arquivo de configuração local..."
+    echo "Arquivo de configuração local.php não encontrado no EFS. Criando..."
     if [ -f "/var/www/html/app/config/local.php.dist" ]; then
-        cp /var/www/html/app/config/local.php.dist /mautic/config/local.php 2>/dev/null || echo "Aviso: Não foi possível copiar local.php.dist"
+        cp /var/www/html/app/config/local.php.dist /mautic/config/local.php
     else
         echo "Criando configuração padrão..."
-        cat > /mautic/config/local.php << 'EOF' 2>/dev/null || echo "Aviso: Não foi possível criar local.php"
+        cat > /mautic/config/local.php << 'EOF'
 <?php
 $parameters = array(
     'db_driver' => 'pdo_mysql',
@@ -79,32 +72,33 @@ $parameters = array(
 );
 EOF
     fi
-    chown www-data:www-data /mautic/config/local.php 2>/dev/null || echo "Aviso: Não foi possível alterar proprietário do local.php"
-    chmod 664 /mautic/config/local.php 2>/dev/null || echo "Aviso: Não foi possível alterar permissões do local.php"
+    chown www-data:www-data /mautic/config/local.php
+    chmod 664 /mautic/config/local.php
 fi
+
+# Garantir que o Mautic esteja apontando para o local.php correto
+ln -sf /mautic/config/local.php /var/www/html/app/config/local.php
 
 # Configurar Whitelabeler se necessário
 if [ "$ENABLE_WHITELABEL" = "true" ]; then
     echo "=== Configurando Whitelabeler ==="
-    
+
     # Instalar dependências necessárias
     echo "Instalando dependências..."
     apt-get update && apt-get install -y git curl npm
-    
-    # Clonar o Whitelabeler temporariamente e mover os arquivos necessários
-    echo "Configurando Whitelabeler..."
-    TMP_DIR=$(mktemp -d)
-    cd $TMP_DIR
-    git clone https://github.com/nickian/mautic-whitelabeler.git .
-    
-    # Mover arquivos necessários para o diretório raiz do Mautic
-    cp -r * /var/www/html/
-    cd /var/www/html
-    rm -rf $TMP_DIR
-    
+
+    # Clonar o Whitelabeler se ainda não estiver no EFS
+    if [ ! -d "/mautic/mautic-whitelabeler" ]; then
+        echo "Clonando Whitelabeler para o EFS..."
+        git clone https://github.com/nickian/mautic-whitelabeler.git /mautic/mautic-whitelabeler
+    fi
+
+    # Criar symlink para o Whitelabeler dentro do Mautic
+    ln -sf /mautic/mautic-whitelabeler /var/www/html/mautic-whitelabeler
+
     # Criar diretório de assets se não existir
     mkdir -p /var/www/html/assets
-    
+
     # Criar config.json para o Whitelabeler
     cat > /var/www/html/assets/config.json << EOF
 {
@@ -132,21 +126,21 @@ EOF
     echo "Instalando dependências..."
     composer install --no-interaction --no-progress
     npm install
-    
+
     # Gerar assets do Mautic
     echo "Gerando assets..."
     php bin/console mautic:assets:generate
-    
+
     # Aplicar Whitelabeling
     echo "Aplicando Whitelabeling..."
     sudo -u www-data php cli.php --whitelabel
-    
+
     # Limpar cache
     echo "Limpando cache..."
     php bin/console cache:clear
-    
+
     echo "Processo de Whitelabeling concluído"
 fi
 
-# Executar o comando original
-exec "$@" 
+# Executar o comando original do container
+exec "$@"
