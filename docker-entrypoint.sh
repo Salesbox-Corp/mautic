@@ -62,6 +62,7 @@ touch /var/www/html/app/config/.installed 2>/dev/null || log_warning "Não foi p
 
 # Ajustar permissões do EFS
 log_info "Ajustando permissões do EFS..."
+chown -R www-data:www-data /var/www/html
 chmod -R 777 /var/www/html 2>/dev/null || log_warning "Erro ao ajustar permissões do EFS"
 
 # Configurar Apache para usar porta 8080
