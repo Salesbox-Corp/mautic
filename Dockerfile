@@ -17,7 +17,10 @@ RUN mkdir -p /var/www/html/app/cache /var/www/html/app/logs \
     && chmod -R 775 /var/www/html
 
 # Instalar mautic-whitelabeler
-RUN git clone https://github.com/nickallbutt/mautic-whitelabeler.git /var/www/html/mautic-whitelabeler \
+RUN curl -L -o /tmp/mautic-whitelabeler.zip https://github.com/nickian/mautic-whitelabeler/archive/refs/heads/master.zip \
+    && unzip /tmp/mautic-whitelabeler.zip -d /tmp \
+    && mv /tmp/mautic-whitelabeler-master /var/www/html/mautic-whitelabeler \
+    && rm /tmp/mautic-whitelabeler.zip \
     && chown -R www-data:www-data /var/www/html/mautic-whitelabeler
 
 # Copiar configuração do mautic-whitelabeler
